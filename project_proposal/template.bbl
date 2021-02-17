@@ -1,0 +1,37 @@
+\begin{thebibliography}{1}
+
+\bibitem{bahdanau}
+Kyunghyun~Cho Dzmitry~Bahdanau and Yoshua Bengio.
+\newblock Neural machine translation by jointly learning to align and
+  translate.
+\newblock In {\em CoRR}, 2014.
+
+\bibitem{rnet}
+Microsoft Research~Asia Natural Language Computing~Group.
+\newblock R-net: Machine reading comprehension with self-matching networks.
+\newblock 2017.
+
+\bibitem{zhou}
+Furu Wei Chuanqi Tan Hangbo~Bao Qingyu~Zhou, Nan~Yang and Ming Zhou.
+\newblock Neural question generation from text: A preliminary study.
+\newblock In {\em arXiv preprint arXiv:1704.01792}, 2017.
+
+\bibitem{rocktaschel}
+Karl Moritz Hermann Tomas~Kocisky Tim~Rocktaschel, Edward~Grefenstette and Phil
+  Blunsom.
+\newblock Reasoning about entailment with neural attention.
+\newblock In {\em CoRR}, 2015.
+
+\bibitem{wang2016a}
+Shuohang Wang and Jing Jiang.
+\newblock Learning natural language inference with lstm.
+\newblock In {\em NAACL HLT 2016, The 2016 Conference of the North American
+  Chapter of the Association for Computational Linguistics: Human Language
+  Technologies, San Diego California, USA,}, 2016.
+
+\bibitem{wang2016b}
+Shuohang Wang and Jing Jiang.
+\newblock Machine comprehension using match-lstm and answer pointer.
+\newblock In {\em arXiv preprint arXiv:1608.07905}, 2016.
+
+\end{thebibliography}

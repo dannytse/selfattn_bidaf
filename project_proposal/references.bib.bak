@@ -34,7 +34,7 @@
 }
 
 @inproceedings{rnet,
-    title="R-Net: Machine Reading Comprehension with Self-Matching Networks",
+    title="Neural Question Generation from Text: A Preliminary Study",
     author="Natural Language Computing Group, Microsoft Research Asia",
     year="2017",
 }
