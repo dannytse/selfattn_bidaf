@@ -17,7 +17,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAF, RNet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
