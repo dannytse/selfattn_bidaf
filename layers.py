@@ -220,3 +220,34 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+# -----------------------------------------------------------------------------------------------------------------------
+
+class WordCharEmbedding(nn.Module):
+    """Embedding layer with both word and character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained character vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(WordCharEmbedding, self).__init__()
+        self.drop_prob = drop_prob
+        word_embed = nn.Embedding.from_pretrained(word_vectors)
+        char_embed = nn.Embedding.from_pretrained(char_vectors)
+        self.embed = torch.cat([word_embed, char_embed], dim=1)
+        self.proj = nn.Linear(word_vectors.size(1) + char_vectors.size(1), hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
+    def forward(self, x):
+        emb = self.embed(x)   # (batch_size, seq_len, embed_size)
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+
+        return emb
