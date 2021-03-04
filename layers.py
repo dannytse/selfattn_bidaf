@@ -271,15 +271,39 @@ class WordCharEmbedding(nn.Module):
                           num_layers=num_layers,
                           dropout=drop_prob)
 
+        # Highway code
+        self.proj = nn.Linear(2 * hidden_size, hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
     def forward(self, w, c):
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
         char_emb, _ = torch.max(char_emb, dim=2)
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = F.dropout(emb, self.drop_prob, self.training)
-        emb = self.GRU(emb)[0] # (batch_size, seq_length, hidden_size)
+        emb, _ = self.GRU(emb) # (batch_size, seq_length, hidden_size)
 
+
+        # Highway code
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
+
+
+class Gate(nn.Module):
+    """Gate.
+
+    Args:
+    """
+    def __init__(self, input_size, drop_prob):
+        super(Gate, self).__init__()
+        self.drop_prob = drop_prob
+        self.Wg = nn.Linear(input_size, input_size, bias=False)
+
+    def forward(self, x):
+        Wg = self.Wg(x)
+        Wg = F.dropout(nn.Sigmoid(x), self.drop_prob)
+        return Wg * x
 
 
 class GatedElementBasedRNNLayer(nn.Module):
@@ -287,12 +311,38 @@ class GatedElementBasedRNNLayer(nn.Module):
 
     Args:
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, input_size, output_size, hidden_size, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
-        pass
+        self.input_size = input_size
+        self.drop_prob = drop_prob
 
-    def forward(self, question_repr, passage_repr):
-        pass
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
+        self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
+        self.WuP = nn.Linear(input_size, hidden_size, bias=False)
+        self.WvP = nn.Linear(input_size, hidden_size, bias=False)
+
+        self.gate = Gate(input_size, drop_prob)
+
+        self.RNN = nn.RNN(input_size=input_size,
+                          hidden_size=output_size)
+
+    def forward(self, passage_repr, question_repr, passage_repr_last=None):
+        question = self.WuQ(question_repr)
+        passage = self.WuP(passage_repr)
+        #passage_last = self.Wvp(passage_repr_last)
+
+        pdb.set_trace()
+        sj = self.vT(torch.tanh(question + passage))
+        ai = F.softmax(sj)
+        ct = (ai * sj).sum(0)
+
+        combined = torch.cat((passage_repr, ct), dim=2)
+        combined = self.gate(combined)
+        combined = torch.split(combined, (self.imput_size, self.input_size), 2)[1]
+
+        return self.RNN(combined)[0]
+
+
 
 
 class SelfMatchingAttention(nn.Module):

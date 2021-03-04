@@ -99,10 +99,15 @@ class RNet(nn.Module):
                                             num_layers=10,
                                             drop_prob=drop_prob)
 
-        self.enc = layers.RNNEncoder(input_size=2 * hidden_size, # bidirectional
+        self.enc = layers.RNNEncoder(input_size=hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob)
+
+        # self.gated_rnn = layers.GatedElementBasedRNNLayer(input_size=2 * hidden_size, # bidirectional
+        #                                                   output_size=8 * hidden_size,
+        #                                                   hidden_size=hidden_size,
+        #                                                   drop_prob=drop_prob)
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob)
@@ -122,6 +127,9 @@ class RNet(nn.Module):
 
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
+
+        self.enc.flatten_parameters()
+        # gated_rnn = self.gated_rnn(c_emb, q_emb)
 
         c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
         q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
