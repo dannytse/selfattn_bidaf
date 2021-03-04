@@ -276,6 +276,7 @@ class WordCharEmbedding(nn.Module):
         self.hwy = HighwayEncoder(2, hidden_size)
 
     def forward(self, w, c):
+        self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
         char_emb, _ = torch.max(char_emb, dim=2)
