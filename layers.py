@@ -7,6 +7,7 @@ Author:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pdb
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
@@ -223,11 +224,34 @@ class BiDAFOutput(nn.Module):
 
 # -----------------------------------------------------------------------------------------------------------------------
 
+class CNNwithMaxPooling(nn.Module):
+    """CNN Layer with max pooling for character embeddings.
+
+    Args:
+        char_vectors (torch.Tensor): character vectors to apply 1D convolutional layer to.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(CNNwithMaxPooling, self).__init__()
+        self.conv1d = nn.Conv1d(in_channels=in_channels,
+                                out_channels=out_channels,
+                                kernel_size=kernel_size)
+        self.maxpool = nn.MaxPool1d(out_channels)
+    
+    def forward(self, x):
+        conv = self.conv1d(x) 
+        conv = F.relu(x)
+        conv = self.maxpool(x).squeeze(dim=1)
+        return conv
+
+    def initializeUniform(self, x):
+        with torch.no_grad():
+            self.conv1d.weight.data.fill_(x)
+            self.conv1d.bias.data.fill(0.0)
+
+
 class WordCharEmbedding(nn.Module):
     """Embedding layer with both word and character-level component.
-
-    Word-level embeddings are further refined using a 2-layer Highway Encoder
-    (see `HighwayEncoder` class for details).
+       Uses Gated Recurrent Unit (GRU) to generate character-level embeddings.
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
@@ -235,18 +259,63 @@ class WordCharEmbedding(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, num_layers, hidden_size, drop_prob):
         super(WordCharEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
         self.char_embed = nn.Embedding.from_pretrained(char_vectors)
-        self.proj = nn.Linear(word_vectors.size(1) + char_vectors.size(1), hidden_size, bias=False)
-        self.hwy = HighwayEncoder(2, hidden_size)
+        self.GRU = nn.GRU(input_size=char_vectors.size(1) + word_vectors.size(1),
+                          hidden_size=hidden_size,
+                          bidirectional=True,
+                          batch_first=True,
+                          num_layers=num_layers,
+                          dropout=drop_prob)
 
     def forward(self, w, c):
-        emb = torch.cat([self.word_embed(w), self.char_embed(c)], dim=1)   # (batch_size, seq_len, embed_size * 2)
+        word_emb = self.word_embed(w)
+        char_emb = self.char_embed(c)
+        char_emb, _ = torch.max(char_emb, dim=2)
+        emb = torch.cat((word_emb, char_emb), dim=2)
         emb = F.dropout(emb, self.drop_prob, self.training)
-        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+        emb = self.GRU(emb)[0] # (batch_size, seq_length, hidden_size)
 
         return emb
+
+
+class GatedElementBasedRNNLayer(nn.Module):
+    """Gated Element-Based RNN Layer.
+
+    Args:
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(GatedElementBasedRNNLayer, self).__init__()
+        pass
+
+    def forward(self, question_repr, passage_repr):
+        pass
+
+
+class SelfMatchingAttention(nn.Module):
+    """Self-Matching Attention Layer. 
+
+    Args:
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(SelfMatchingAttention, self).__init__()
+        pass
+
+    def forward(self, x):
+        pass
+
+
+class RNetOutput(nn.Module):
+    """Output layer used by R-Net for question answering.
+
+    Args:
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(RNetOutput, self).__init__()
+        pass
+
+    def forward(self, x):
+        pass
