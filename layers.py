@@ -235,18 +235,55 @@ class CNNwithMaxPooling(nn.Module):
         self.conv1d = nn.Conv1d(in_channels=in_channels,
                                 out_channels=out_channels,
                                 kernel_size=kernel_size)
-        self.maxpool = nn.MaxPool1d(out_channels)
     
     def forward(self, x):
         conv = self.conv1d(x) 
-        conv = F.relu(x)
-        conv = self.maxpool(x).squeeze(dim=1)
         return conv
 
     def initializeUniform(self, x):
         with torch.no_grad():
             self.conv1d.weight.data.fill_(x)
             self.conv1d.bias.data.fill(0.0)
+
+
+class WordCharEmbeddingwithCNN(nn.Module):
+    """Embedding layer with both word and character-level component.
+       Uses Gated Recurrent Unit (GRU) to generate character-level embeddings.
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained character vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(WordCharEmbeddingwithCNN, self).__init__()
+        self.drop_prob = drop_prob
+        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors)
+        linear_input = word_vectors.size(1) + 16
+        self.cnn = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
+        self.maxpool = nn.MaxPool1d(16)
+
+        # Highway code
+        self.proj = nn.Linear(linear_input, hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
+    def forward(self, w, c):
+        word_emb = self.word_embed(w)
+        char_emb = self.char_embed(c)
+        char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
+        char_emb = self.cnn(char_emb)
+        char_emb = self.maxpool(F.relu(char_emb))
+        char_emb = char_emb.squeeze(dim=1)
+        char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1))
+        emb = torch.cat((word_emb, char_emb), dim=-1)
+
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        # Highway code
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+        return emb
 
 
 class WordCharEmbedding(nn.Module):
