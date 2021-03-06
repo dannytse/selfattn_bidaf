@@ -17,7 +17,7 @@
 \newcommand{\note}[1]{\textcolor{blue}{{#1}}}
 
 \title{
-  Title of your project \\
+  RNet Re-Implementation for SQuAD \\
   \vspace{1em}
   \small{\normalfont Stanford CS224N Default Project}  % Select one and delete the other
 }

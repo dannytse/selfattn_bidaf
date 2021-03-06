@@ -93,16 +93,16 @@ class RNet(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
-        # self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
-        #                                     char_vectors=char_vectors,
-        #                                     hidden_size=hidden_size,
-        #                                     num_layers=10,
-        #                                     drop_prob=drop_prob)
+        self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
+                                            char_vectors=char_vectors,
+                                            hidden_size=hidden_size,
+                                            num_layers=10,
+                                            drop_prob=drop_prob)
 
-        self.emb = layers.WordCharEmbeddingwithCNN(word_vectors=word_vectors,
-                                                   char_vectors=char_vectors,
-                                                   hidden_size=hidden_size,
-                                                   drop_prob=drop_prob)
+        # self.emb = layers.WordCharEmbeddingwithCNN(word_vectors=word_vectors,
+        #                                            char_vectors=char_vectors,
+        #                                            hidden_size=hidden_size,
+        #                                            drop_prob=drop_prob)
 
         self.enc = layers.RNNEncoder(input_size=hidden_size,
                                      hidden_size=hidden_size,
