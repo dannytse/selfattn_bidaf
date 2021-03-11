@@ -235,15 +235,14 @@ class CNNwithMaxPooling(nn.Module):
         self.conv1d = nn.Conv1d(in_channels=in_channels,
                                 out_channels=out_channels,
                                 kernel_size=kernel_size)
+        self.maxpool = nn.MaxPool1d(16)
     
     def forward(self, x):
-        conv = self.conv1d(x) 
+        conv = self.conv1d(x)
+        conv = F.relu(conv)
+        conv = self.maxpool(conv)
+        conv = conv.squeeze(dim=1)
         return conv
-
-    def initializeUniform(self, x):
-        with torch.no_grad():
-            self.conv1d.weight.data.fill_(x)
-            self.conv1d.bias.data.fill(0.0)
 
 
 class WordCharEmbeddingwithCNN(nn.Module):
@@ -293,14 +292,18 @@ class WordCharEmbedding(nn.Module):
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
         char_vectors (torch.Tensor): Pre-trained character vectors.
+        num_layers (int): Number of layers for GRU.
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
+
+    Returns:
+        emb (torch.Tensor): representation of all words in question or passage (depending on inputs)
     """
     def __init__(self, word_vectors, char_vectors, num_layers, hidden_size, drop_prob):
         super(WordCharEmbedding, self).__init__()
-        self.drop_prob = drop_prob
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
         self.char_embed = nn.Embedding.from_pretrained(char_vectors)
+        self.CNN = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
         self.GRU = nn.GRU(input_size=char_vectors.size(1) + word_vectors.size(1),
                           hidden_size=hidden_size,
                           bidirectional=True,
@@ -308,23 +311,17 @@ class WordCharEmbedding(nn.Module):
                           num_layers=num_layers,
                           dropout=drop_prob)
 
-        # Highway code
-        self.proj = nn.Linear(2 * hidden_size, hidden_size, bias=False)
-        self.hwy = HighwayEncoder(2, hidden_size)
-
     def forward(self, w, c):
         self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
-        char_emb, _ = torch.max(char_emb, dim=2)
+        char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
+        char_emb = self.CNN(char_emb)
+        char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1))
         emb = torch.cat((word_emb, char_emb), dim=2)
-        emb = F.dropout(emb, self.drop_prob, self.training)
-        emb, _ = self.GRU(emb) # (batch_size, seq_length, hidden_size)
+        emb, self.prev_emb = self.GRU(emb, self.prev_emb) # (batch_size, seq_length, hidden_size)
+        pdb.set_trace()
 
-
-        # Highway code
-        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
 
 
@@ -332,25 +329,34 @@ class Gate(nn.Module):
     """Gate.
 
     Args:
+        x (torch.Tensor): tensor representing [utp, ct] in the R-Net paper.
     """
-    def __init__(self, input_size, drop_prob):
+    def __init__(self, input_size):
         super(Gate, self).__init__()
-        self.drop_prob = drop_prob
         self.Wg = nn.Linear(input_size, input_size, bias=False)
 
     def forward(self, x):
-        Wg = self.Wg(x)
-        Wg = F.dropout(nn.Sigmoid(x), self.drop_prob)
-        return Wg * x
+        gt = self.Wg(x)
+        gt = nn.Sigmoid(gt)
+        return torch.mul(gt, x)
 
 
 class GatedElementBasedRNNLayer(nn.Module):
     """Gated Element-Based RNN Layer.
 
     Args:
+        passage_repr: passage representation
+        question_repr: question representation
+
+    Returns:
+        vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
+                            in the question and passage
     """
     def __init__(self, input_size, output_size, hidden_size, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
+
+        self.prev_hidden_state = torch.zeros((input_size, input_size))
+
         self.input_size = input_size
         self.drop_prob = drop_prob
 
@@ -359,28 +365,34 @@ class GatedElementBasedRNNLayer(nn.Module):
         self.WuP = nn.Linear(input_size, hidden_size, bias=False)
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
 
-        self.gate = Gate(input_size, drop_prob)
+        self.gate = Gate(input_size)
 
-        self.RNN = nn.RNN(input_size=input_size,
-                          hidden_size=output_size)
+        self.match_LSTM = nn.GRU(input_size=input_size,
+                                 hidden_size=hidden_size,
+                                 bidirectional=True,
+                                 batch_first=True,
+                                 dropout=drop_prob)
 
-    def forward(self, passage_repr, question_repr, passage_repr_last=None):
+    def forward(self, passage_repr, question_repr):
+
+        # Calculate ct
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
-        #passage_last = self.Wvp(passage_repr_last)
-
-        pdb.set_trace()
-        sj = self.vT(torch.tanh(question + passage))
+        last_hidden_state = self.WvP(self.prev_hidden_state)
+        sj = self.vT(torch.tanh(question + passage + last_hidden_state))
         ai = F.softmax(sj)
         ct = (ai * sj).sum(0)
 
-        combined = torch.cat((passage_repr, ct), dim=2)
-        combined = self.gate(combined)
-        combined = torch.split(combined, (self.imput_size, self.input_size), 2)[1]
+        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        ct = torch.cat((passage_repr, ct), dim=2)
 
-        return self.RNN(combined)[0]
+        # Apply Gate.
+        ct = self.gate(ct)
 
-
+        _, out = self.match_LSTM(ct, self.prev_hidden_state)
+        out = torch.cat((out[0,:,:], out[1,:,:]), dim=1)
+        self.prev_hidden_state = out
+        return out
 
 
 class SelfMatchingAttention(nn.Module):
@@ -399,11 +411,15 @@ class SelfMatchingAttention(nn.Module):
 class RNetOutput(nn.Module):
     """Output layer used by R-Net for question answering.
 
+    Output layer consists of 
+
     Args:
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
         super(RNetOutput, self).__init__()
-        pass
+
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
+        self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
 
     def forward(self, x):
         pass
