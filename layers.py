@@ -311,34 +311,34 @@ class WordCharEmbedding(nn.Module):
                           num_layers=num_layers,
                           dropout=drop_prob)
 
-    def forward(self, w, c):
+    def forward(self, w, c, prev):
         self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
+        pdb.set_trace()
         char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
         char_emb = self.CNN(char_emb)
         char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1))
         emb = torch.cat((word_emb, char_emb), dim=2)
-        emb, self.prev_emb = self.GRU(emb, self.prev_emb) # (batch_size, seq_length, hidden_size)
-        pdb.set_trace()
+        emb, hidden = self.GRU(emb, self.prev_emb) # (batch_size, seq_length, hidden_size)
 
-        return emb
+        return emb, hidden
 
 
-class Gate(nn.Module):
-    """Gate.
+# class Gate(nn.Module):
+#     """Gate.
 
-    Args:
-        x (torch.Tensor): tensor representing [utp, ct] in the R-Net paper.
-    """
-    def __init__(self, input_size):
-        super(Gate, self).__init__()
-        self.Wg = nn.Linear(input_size, input_size, bias=False)
+#     Args:
+#         x (torch.Tensor): tensor representing [utp, ct] in the R-Net paper.
+#     """
+#     def __init__(self, input_size):
+#         super(Gate, self).__init__()
+#         self.Wg = nn.Linear(input_size, input_size, bias=False)
 
-    def forward(self, x):
-        gt = self.Wg(x)
-        gt = nn.Sigmoid(gt)
-        return torch.mul(gt, x)
+#     def forward(self, x):
+#         gt = self.Wg(x)
+#         gt = nn.Sigmoid(gt)
+#         return torch.mul(gt, x)
 
 
 class GatedElementBasedRNNLayer(nn.Module):
@@ -352,11 +352,8 @@ class GatedElementBasedRNNLayer(nn.Module):
         vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
                             in the question and passage
     """
-    def __init__(self, input_size, output_size, hidden_size, drop_prob):
+    def __init__(self, input_size, hidden_size, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
-
-        self.prev_hidden_state = torch.zeros((input_size, input_size))
-
         self.input_size = input_size
         self.drop_prob = drop_prob
 
@@ -365,7 +362,10 @@ class GatedElementBasedRNNLayer(nn.Module):
         self.WuP = nn.Linear(input_size, hidden_size, bias=False)
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
 
-        self.gate = Gate(input_size)
+        self.gate = nn.Sequential(
+            nn.Linear(input_size, input_size, bias=False),
+            nn.Sigmoid()
+        )
 
         self.match_LSTM = nn.GRU(input_size=input_size,
                                  hidden_size=hidden_size,
@@ -373,47 +373,64 @@ class GatedElementBasedRNNLayer(nn.Module):
                                  batch_first=True,
                                  dropout=drop_prob)
 
-    def forward(self, passage_repr, question_repr):
+    def forward(self, passage_repr, question_repr, prev_repr):
 
         # Calculate ct
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
-        last_hidden_state = self.WvP(self.prev_hidden_state)
+        last_hidden_state = self.WvP(prev_repr)
         sj = self.vT(torch.tanh(question + passage + last_hidden_state))
         ai = F.softmax(sj)
-        ct = (ai * sj).sum(0)
+        ct = (ai * sj).sum(1)
 
         # Concatenate utp (passage_repr) and ct (attention-pooling vector)
         ct = torch.cat((passage_repr, ct), dim=2)
 
         # Apply Gate.
-        ct = self.gate(ct)
+        ct = torch.mul(ct, self.gate(ct))
 
-        _, out = self.match_LSTM(ct, self.prev_hidden_state)
-        out = torch.cat((out[0,:,:], out[1,:,:]), dim=1)
-        self.prev_hidden_state = out
-        return out
+        result, out = self.match_LSTM(ct, prev_repr)
+        prev_repr = out
+        return result
 
 
 class SelfMatchingAttention(nn.Module):
-    """Self-Matching Attention Layer. 
+    """Self-Matching Attention Layer. Directly matches question-aware passage representation against itself.
 
     Args:
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, input_size, hidden_size, drop_prob):
         super(SelfMatchingAttention, self).__init__()
-        pass
 
-    def forward(self, x):
-        pass
+        self.drop_prob = drop_prob
+
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
+        self.WvP = nn.Linear(input_size, hidden_size, bias=False)
+        self.WvPbar = nn.Linear(input_size, hidden_size, bias=False)
+
+        self.AttentionRNN = nn.GRU(input_size=input_size,
+                                   hidden_size=hidden_size,
+                                   bidirectional=True,
+                                   batch_first=True,
+                                   dropout=drop_prob)
+
+    def forward(self, vjp, vtp, prev):
+        x = self.WvP(vjp)
+        y = self.WvPbar(vtp)
+        sj = self.vT(torch.tanh(x + y))
+        ai = F.softmax(sj)
+        ct = (ai * sj).sum(1)
+        
+        RNN_input = torch.cat((vtp, ct), dim=1)
+
+        return self.AttentionRNN(RNN_input, prev)
 
 
 class RNetOutput(nn.Module):
-    """Output layer used by R-Net for question answering.
-
-    Output layer consists of 
+    """Output layer used by R-Net for question answering. Uses pointer networks.
 
     Args:
+        x (torch.Tensor): passage representation
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
         super(RNetOutput, self).__init__()
