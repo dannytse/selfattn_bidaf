@@ -299,12 +299,19 @@ class WordCharEmbedding(nn.Module):
     Returns:
         emb (torch.Tensor): representation of all words in question or passage (depending on inputs)
     """
-    def __init__(self, word_vectors, char_vectors, num_layers, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, num_layers, cnn_size, hidden_size, drop_prob):
         super(WordCharEmbedding, self).__init__()
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
         self.char_embed = nn.Embedding.from_pretrained(char_vectors)
-        self.CNN = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
-        self.GRU = nn.GRU(input_size=char_vectors.size(1) + word_vectors.size(1),
+        self.CNN = nn.Sequential(
+            nn.Conv1d(in_channels=char_vectors.size(1),
+                      out_channels=cnn_size,
+                      kernel_size=5),
+            nn.ReLU(),
+            nn.MaxPool1d(cnn_size)
+        )
+        # self.CNN = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
+        self.GRU = nn.GRU(input_size=cnn_size + word_vectors.size(1),
                           hidden_size=hidden_size,
                           bidirectional=True,
                           batch_first=True,
@@ -315,12 +322,12 @@ class WordCharEmbedding(nn.Module):
         self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
-        pdb.set_trace()
         char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
         char_emb = self.CNN(char_emb)
+        char_emb = char_emb.squeeze(dim=1)
         char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1))
         emb = torch.cat((word_emb, char_emb), dim=2)
-        emb, hidden = self.GRU(emb, self.prev_emb) # (batch_size, seq_length, hidden_size)
+        emb, hidden = self.GRU(emb, prev) # (batch_size, seq_length, hidden_size)
 
         return emb, hidden
 
@@ -352,7 +359,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
                             in the question and passage
     """
-    def __init__(self, input_size, hidden_size, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
         self.input_size = input_size
         self.drop_prob = drop_prob
@@ -371,15 +378,19 @@ class GatedElementBasedRNNLayer(nn.Module):
                                  hidden_size=hidden_size,
                                  bidirectional=True,
                                  batch_first=True,
+                                 num_layers=num_layers,
                                  dropout=drop_prob)
 
-    def forward(self, passage_repr, question_repr, prev_repr):
+    def forward(self, passage_repr, question_repr, prev):
 
         # Calculate ct
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
-        last_hidden_state = self.WvP(prev_repr)
-        sj = self.vT(torch.tanh(question + passage + last_hidden_state))
+        #last_hidden_state = self.WvP(prev)
+        
+        
+
+        sj = self.vT(torch.tanh(question + passage))
         ai = F.softmax(sj)
         ct = (ai * sj).sum(1)
 
@@ -389,9 +400,9 @@ class GatedElementBasedRNNLayer(nn.Module):
         # Apply Gate.
         ct = torch.mul(ct, self.gate(ct))
 
-        result, out = self.match_LSTM(ct, prev_repr)
-        prev_repr = out
-        return result
+        result, out = self.match_LSTM(ct)
+        pdb.set_trace()
+        return result, out
 
 
 class SelfMatchingAttention(nn.Module):
