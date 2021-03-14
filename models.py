@@ -131,11 +131,11 @@ class RNet(nn.Module):
 
         return start, end
 
-    def generate_placeholders(self, batch_size, hidden_size, device):
-        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
-        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
-        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size)).to(device)
-        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
+    def generate_placeholders(self, batch_size, hidden_size):
+        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size))
+        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
         self.initial_hidden = False
         self.hat = None
 
