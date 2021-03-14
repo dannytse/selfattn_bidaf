@@ -120,7 +120,7 @@ def main(args):
                 loss_val = loss.item()
 
                 # Backward
-                loss.backward()
+                loss.backward(retain_graph=True)
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step(step // batch_size)
