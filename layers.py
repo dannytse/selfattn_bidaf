@@ -488,7 +488,9 @@ class RNetOutput(nn.Module):
         sj = self.vT(torch.tanh(WhP + WhA))
         ai = F.log_softmax(sj)
 
-        pointer = torch.argmax(ai, dim=1).squeeze(-1)
+        pointer = ai.squeeze(-1)
+
+        #pointer = torch.argmax(ai, dim=1).squeeze(-1)
 
         ct = torch.sum(ai * h, dim=1).unsqueeze(0).repeat(num_layers, 1, 1)
         hat, _ = self.RNN(hat_1, ct)
