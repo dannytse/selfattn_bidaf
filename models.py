@@ -101,54 +101,46 @@ class RNet(nn.Module):
                                             num_layers=self.num_layers,
                                             drop_prob=drop_prob)
 
-        # self.emb = layers.WordCharEmbeddingwithCNN(word_vectors=word_vectors,
-        #                                            char_vectors=char_vectors,
-        #                                            hidden_size=hidden_size,
-        #                                            drop_prob=drop_prob)
-
-        # self.enc = layers.RNNEncoder(input_size=hidden_size,
-        #                              hidden_size=hidden_size,
-        #                              num_layers=1,
-        #                              drop_prob=drop_prob)
-
-        self.gated_rnn = layers.GatedElementBasedRNNLayer(input_size=2 * hidden_size, # bidirectional
+        self.gated_rnn = layers.GatedElementBasedRNNLayer(input_size=2 * hidden_size, # bidirectional output from prev layer
                                                           hidden_size=hidden_size,
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 
-        self.att = layers.SelfMatchingAttention(input_size=2 * hidden_size,
+        self.att = layers.SelfMatchingAttention(input_size=hidden_size,
                                                 hidden_size=hidden_size,
+                                                num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
 
         self.out = layers.RNetOutput(input_size=2 * hidden_size,
-                                     hidden_size=hidden_size)
+                                     hidden_size=hidden_size,
+                                     num_layers=self.num_layers,
+                                     drop_prob=drop_prob)
+
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
-        c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
+        #c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
         c_emb, self.c_hidden = self.emb(cw_idxs, cc_idxs, self.c_hidden)         # (batch_size, c_len, hidden_size)
         q_emb, self.q_hidden = self.emb(qw_idxs, qc_idxs, self.q_hidden)         # (batch_size, q_len, hidden_size)
 
-        gate_output, self.vt_hidden = self.gated_rnn(c_emb, q_emb, self.vt_hidden)
+        v_p, self.vt_hidden = self.gated_rnn(c_emb, q_emb, self.vt_hidden)
 
-        # c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
-        # q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
+        h_p, self.hp_hidden = self.att(v_p, self.hp_hidden)
 
-        # att = self.att(c_enc, q_enc,
-        #                c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+        start, self.hat = self.out(h_p, q_emb, self.num_layers, self.initial_hidden, self.hat)
+        self.initial_hidden = True
+        end, self.hat = self.out(h_p, q_emb, self.num_layers, self.initial_hidden, self.hat)
 
-        # mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-        # out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-        out = 0
-
-        return out
+        return start, end
 
     def generate_placeholders(self, batch_size, hidden_size):
         self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
         self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
-        self.vt_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size))
+        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+        self.initial_hidden = False
+        self.hat = None
 
     

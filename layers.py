@@ -310,7 +310,6 @@ class WordCharEmbedding(nn.Module):
             nn.ReLU(),
             nn.MaxPool1d(cnn_size)
         )
-        # self.CNN = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
         self.GRU = nn.GRU(input_size=cnn_size + word_vectors.size(1),
                           hidden_size=hidden_size,
                           bidirectional=True,
@@ -370,29 +369,33 @@ class GatedElementBasedRNNLayer(nn.Module):
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
 
         self.gate = nn.Sequential(
-            nn.Linear(input_size, input_size, bias=False),
+            nn.Linear(2 * input_size, 2 * input_size, bias=False),
             nn.Sigmoid()
         )
 
-        self.match_LSTM = nn.GRU(input_size=input_size,
+        self.match_LSTM = nn.GRU(input_size=input_size * 2,
                                  hidden_size=hidden_size,
-                                 bidirectional=True,
                                  batch_first=True,
                                  num_layers=num_layers,
                                  dropout=drop_prob)
 
     def forward(self, passage_repr, question_repr, prev):
+        self.match_LSTM.flatten_parameters()
 
         # Calculate ct
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
         #last_hidden_state = self.WvP(prev)
         
-        
+        question_size = question.size(1)
+        passage_size = passage.size(1)
+        question = question.unsqueeze(2).repeat(1, 1, passage_size, 1)
+        passage = passage.unsqueeze(0).repeat(question_size, 1, 1, 1).transpose(1, 0)
 
         sj = self.vT(torch.tanh(question + passage))
-        ai = F.softmax(sj)
-        ct = (ai * sj).sum(1)
+        ai = F.softmax(sj, dim=1)
+        uj = question_repr.unsqueeze(2).repeat(1, 1, passage_size, 1)
+        ct = (uj * ai).sum(1)
 
         # Concatenate utp (passage_repr) and ct (attention-pooling vector)
         ct = torch.cat((passage_repr, ct), dim=2)
@@ -400,8 +403,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         # Apply Gate.
         ct = torch.mul(ct, self.gate(ct))
 
-        result, out = self.match_LSTM(ct)
-        pdb.set_trace()
+        result, out = self.match_LSTM(ct, prev)
         return result, out
 
 
@@ -410,7 +412,7 @@ class SelfMatchingAttention(nn.Module):
 
     Args:
     """
-    def __init__(self, input_size, hidden_size, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(SelfMatchingAttention, self).__init__()
 
         self.drop_prob = drop_prob
@@ -419,22 +421,33 @@ class SelfMatchingAttention(nn.Module):
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
         self.WvPbar = nn.Linear(input_size, hidden_size, bias=False)
 
-        self.AttentionRNN = nn.GRU(input_size=input_size,
+        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
                                    batch_first=True,
+                                   num_layers=num_layers,
                                    dropout=drop_prob)
 
-    def forward(self, vjp, vtp, prev):
-        x = self.WvP(vjp)
-        y = self.WvPbar(vtp)
-        sj = self.vT(torch.tanh(x + y))
-        ai = F.softmax(sj)
-        ct = (ai * sj).sum(1)
-        
-        RNN_input = torch.cat((vtp, ct), dim=1)
+    def forward(self, passage, prev):
+        self.AttentionRNN.flatten_parameters()
 
-        return self.AttentionRNN(RNN_input, prev)
+        WvP = self.WvP(passage)
+        WvPbar = self.WvPbar(passage)
+
+        passage_size = passage.size(1)
+        passage_iter = WvP.unsqueeze(2).repeat(1, 1, passage_size, 1)
+        passage_repeat = WvPbar.unsqueeze(0).repeat(passage_size, 1, 1, 1).transpose(1, 0)
+
+        sj = self.vT(torch.tanh(passage_iter + passage_repeat))
+        ai = F.softmax(sj, dim=1)
+        uj = passage.unsqueeze(2).repeat(1, 1, passage_size, 1)
+        ct = (uj * ai).sum(1)
+        
+        ct = torch.cat((passage, ct), dim=2)
+
+        result, out = self.AttentionRNN(ct, prev)
+
+        return result, out
 
 
 class RNetOutput(nn.Module):
@@ -443,11 +456,49 @@ class RNetOutput(nn.Module):
     Args:
         x (torch.Tensor): passage representation
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(RNetOutput, self).__init__()
 
         self.vT = nn.Linear(hidden_size, 1, bias=False)
-        self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
+        self.WhP = nn.Linear(input_size, hidden_size, bias=False)
+        self.WhA = nn.Linear(input_size, hidden_size, bias=False)
 
-    def forward(self, x):
-        pass
+        self.RNN = nn.GRU(input_size=input_size,
+                          hidden_size=input_size,
+                          batch_first=True,
+                          num_layers=num_layers,
+                          dropout=drop_prob)
+
+        self.WuQ = nn.Linear(input_size, hidden_size, bias=True)
+        
+
+    def forward(self, h, q, num_layers, initial_hidden_bool, initial_hidden):
+        self.RNN.flatten_parameters()
+
+        hat_1 = initial_hidden
+
+        if not initial_hidden_bool:
+            hat_1 = self.initial_question_state(q).unsqueeze(1)
+
+        initial_hidden = hat_1.repeat(1, h.size(1), 1)
+
+        WhP = self.WhP(h)
+        WhA = self.WhA(initial_hidden)
+
+        sj = self.vT(torch.tanh(WhP + WhA))
+        ai = F.log_softmax(sj)
+
+        pointer = torch.argmax(ai, dim=1).squeeze(-1)
+
+        ct = torch.sum(ai * h, dim=1).unsqueeze(0).repeat(num_layers, 1, 1)
+        hat, _ = self.RNN(hat_1, ct)
+
+        return pointer, hat
+
+    def initial_question_state(self, q):
+        initial_hidden = self.WuQ(q)
+        initial_hidden = torch.tanh(initial_hidden)
+        initial_hidden = self.vT(initial_hidden)
+        initial_hidden = F.softmax(initial_hidden, dim=1)
+        initial_hidden = (initial_hidden * q).sum(1)
+        return initial_hidden
