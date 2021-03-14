@@ -428,7 +428,7 @@ class SelfMatchingAttention(nn.Module):
                                    num_layers=num_layers,
                                    dropout=drop_prob)
 
-    def forward(self, passage, prev):
+    def forward(self, passage):
         self.AttentionRNN.flatten_parameters()
 
         WvP = self.WvP(passage)
@@ -445,9 +445,9 @@ class SelfMatchingAttention(nn.Module):
         
         ct = torch.cat((passage, ct), dim=2)
 
-        result, out = self.AttentionRNN(ct, prev)
+        result, _ = self.AttentionRNN(ct)
 
-        return result, out
+        return result
 
 
 class RNetOutput(nn.Module):
