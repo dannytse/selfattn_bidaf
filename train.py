@@ -164,6 +164,13 @@ def main(args):
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
+                    del cw_idxs
+                    del qw_idxs
+                    del cc_idxs
+                    del qc_idxs
+                    del y1
+                    del y2
+                    torch.cuda.empty_cache()
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
