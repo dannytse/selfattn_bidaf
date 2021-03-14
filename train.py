@@ -53,7 +53,8 @@ def main(args):
                  hidden_size=args.hidden_size,
                  drop_prob=args.drop_prob)
     model.generate_placeholders(batch_size=args.batch_size,
-                                hidden_size=args.hidden_size)
+                                hidden_size=args.hidden_size,
+                                device=device)
     # model = BiDAF(word_vectors=word_vectors,
     #               hidden_size=args.hidden_size,
     #               drop_prob=args.drop_prob)
@@ -115,7 +116,6 @@ def main(args):
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
-                pdb.set_trace()
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 

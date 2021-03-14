@@ -118,10 +118,6 @@ class RNet(nn.Module):
 
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
-        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
-        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
-        #c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-
         c_emb, self.c_hidden = self.emb(cw_idxs, cc_idxs, self.c_hidden)         # (batch_size, c_len, hidden_size)
         q_emb, self.q_hidden = self.emb(qw_idxs, qc_idxs, self.q_hidden)         # (batch_size, q_len, hidden_size)
 
@@ -135,11 +131,11 @@ class RNet(nn.Module):
 
         return start, end
 
-    def generate_placeholders(self, batch_size, hidden_size):
-        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
-        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
-        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size))
-        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+    def generate_placeholders(self, batch_size, hidden_size, device):
+        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
+        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
+        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size)).to(device)
+        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(device)
         self.initial_hidden = False
         self.hat = None
 
