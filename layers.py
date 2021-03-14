@@ -485,7 +485,7 @@ class RNetOutput(nn.Module):
         WhA = self.WhA(initial_hidden)
 
         sj = self.vT(torch.tanh(WhP + WhA))
-        ai = F.log_softmax(sj)
+        ai = F.softmax(sj)
 
         pointer = ai.squeeze(-1)
 
