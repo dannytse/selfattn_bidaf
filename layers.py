@@ -458,7 +458,6 @@ class RNetOutput(nn.Module):
     """
     def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(RNetOutput, self).__init__()
-
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WhP = nn.Linear(input_size, hidden_size, bias=False)
         self.WhA = nn.Linear(input_size, hidden_size, bias=False)

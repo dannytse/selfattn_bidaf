@@ -91,9 +91,10 @@ class RNet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, hidden_size, device, drop_prob=0.):
         super(RNet, self).__init__()
         self.num_layers = 10
+        self.device = device
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
@@ -118,12 +119,18 @@ class RNet(nn.Module):
 
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
+
         c_emb, self.c_hidden = self.emb(cw_idxs, cc_idxs, self.c_hidden)         # (batch_size, c_len, hidden_size)
+        self.c_hidden = self.c_hidden.to(self.device)
+
         q_emb, self.q_hidden = self.emb(qw_idxs, qc_idxs, self.q_hidden)         # (batch_size, q_len, hidden_size)
+        self.q_hidden = self.q_hidden.to(self.device)
 
         v_p, self.vt_hidden = self.gated_rnn(c_emb, q_emb, self.vt_hidden)
+        self.vt_hidden = self.vt_hidden.to(self.device)
 
         h_p, self.hp_hidden = self.att(v_p, self.hp_hidden)
+        self.hp_hidden = self.hp_hidden.to(self.device)
 
         start, self.hat = self.out(h_p, q_emb, self.num_layers, self.initial_hidden, self.hat)
         self.initial_hidden = True
@@ -132,10 +139,10 @@ class RNet(nn.Module):
         return start, end
 
     def generate_placeholders(self, batch_size, hidden_size):
-        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
-        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
-        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size))
-        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size))
+        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
+        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
+        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size)).to(self.device)
+        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
         self.initial_hidden = False
         self.hat = None
 
