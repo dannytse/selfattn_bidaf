@@ -51,10 +51,9 @@ def main(args):
     model = RNet(word_vectors=word_vectors,
                  char_vectors=char_vectors,
                  hidden_size=args.hidden_size,
-                 drop_prob=args.drop_prob,
-                 device=device)
-    model.generate_placeholders(batch_size=args.batch_size,
-                                hidden_size=args.hidden_size)
+                 drop_prob=args.drop_prob)
+    # model.generate_placeholders(batch_size=args.batch_size,
+    #                             hidden_size=args.hidden_size)
     # model = BiDAF(word_vectors=word_vectors,
     #               hidden_size=args.hidden_size,
     #               drop_prob=args.drop_prob)

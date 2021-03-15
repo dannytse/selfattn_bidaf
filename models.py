@@ -7,6 +7,7 @@ Author:
 import layers
 import torch
 import torch.nn as nn
+import pdb
 
 
 class BiDAF(nn.Module):
@@ -91,10 +92,8 @@ class RNet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, device, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
-        self.num_layers = 10
-        self.device = device
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
@@ -120,17 +119,17 @@ class RNet(nn.Module):
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
 
-        c_emb, self.c_hidden = self.emb(cw_idxs, cc_idxs, self.c_hidden)         # (batch_size, c_len, hidden_size)
+        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
 
-        q_emb, self.q_hidden = self.emb(qw_idxs, qc_idxs, self.q_hidden)         # (batch_size, q_len, hidden_size)
+        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
 
-        v_p, self.vt_hidden = self.gated_rnn(c_emb, q_emb, self.vt_hidden)
+        v_p = self.gated_rnn(c_emb, q_emb)
 
-        h_p, self.hp_hidden = self.att(v_p, self.hp_hidden)
+        h_p = self.att(v_p)
 
-        start, self.hat = self.out(h_p, q_emb, self.num_layers, self.initial_hidden, self.hat)
-        self.initial_hidden = True
-        end, self.hat = self.out(h_p, q_emb, self.num_layers, self.initial_hidden, self.hat)
+        start, end = self.out(h_p, q_emb)
+
+        pdb.set_trace()
 
         return start, end
 
