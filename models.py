@@ -130,6 +130,4 @@ class RNet(nn.Module):
 
         start, end = self.out(h_p, q_emb)
 
-        pdb.set_trace()
-
         return start, end
