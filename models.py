@@ -94,6 +94,7 @@ class RNet(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
+        self.num_layers = 1
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
@@ -132,13 +133,3 @@ class RNet(nn.Module):
         pdb.set_trace()
 
         return start, end
-
-    def generate_placeholders(self, batch_size, hidden_size):
-        self.c_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
-        self.q_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
-        self.vt_hidden = torch.zeros((self.num_layers, batch_size, hidden_size)).to(self.device)
-        self.hp_hidden = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
-        self.initial_hidden = False
-        self.hat = torch.zeros((2 * self.num_layers, batch_size, hidden_size)).to(self.device)
-
-    
