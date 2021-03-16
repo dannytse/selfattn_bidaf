@@ -330,7 +330,7 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        # result = result.transpose(1, 0) # for bidaf
+        result = result.transpose(1, 0) # for bidaf
         return result
 
         # emb = emb.permute((1, 0, 2))
@@ -386,7 +386,7 @@ class GatedElementBasedRNNLayer(nn.Module):
                                  num_layers=num_layers,
                                  dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage_repr, question_repr, passage_mask, question_mask):
+    def forward(self, passage_repr, question_repr):
          # ATTEMPT 2:
         # # Calculate ct
         # question_size, batch_size, _ = question_repr.size()
@@ -419,20 +419,14 @@ class GatedElementBasedRNNLayer(nn.Module):
 
         question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         passage = passage.repeat(question_size, 1, 1, 1)
-        
-        # batch_size = question.size(0)
-        # question_size = question.size(1)
-        # passage_size = passage.size(1)
 
         # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
         # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
 
         sj = self.vT(torch.tanh(question + passage))
-        # question_mask = question_mask.view((question_size, 1, batch_size, 1))
         ai = F.softmax(sj, dim=0)
         expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_q * ai).sum(0)
-        #ct = torch.bmm(ai, question_repr)
 
         # Concatenate utp (passage_repr) and ct (attention-pooling vector)
         ct = torch.cat((passage_repr, ct), dim=2)
@@ -476,7 +470,7 @@ class SelfMatchingAttention(nn.Module):
                                    num_layers=num_layers,
                                    dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage, passage_mask):
+    def forward(self, passage):
         self.AttentionRNN.flatten_parameters()
 
         passage_size, batch_size, _ = passage.size()
@@ -488,7 +482,6 @@ class SelfMatchingAttention(nn.Module):
         WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
         
         sj = self.vT(torch.tanh(WvP + WvPbar))
-        passage_mask = passage_mask.view((passage_size, 1, batch_size, 1))
         ai = F.softmax(sj, dim=0)
         expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_p * ai).sum(0)
@@ -505,7 +498,7 @@ class SelfMatchingAttention(nn.Module):
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
-        # result = result.transpose(1, 0) # for bidaf
+        result = result.transpose(1, 0) # for bidaf
         return result # (num_words, batch_size, hidden_size)
 
         
