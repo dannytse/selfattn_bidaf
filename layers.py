@@ -431,7 +431,7 @@ class GatedElementBasedRNNLayer(nn.Module):
 
         sj = self.vT(torch.tanh(question + passage))
         question_mask = question_mask.view((question_size, 1, batch_size, 1))
-        ai = masked_softmax(sj, question_mask, dim=0) 
+        ai = F.softmax(sj, dim=0)
         expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_q * ai).sum(0)
         #ct = torch.bmm(ai, question_repr)
@@ -492,7 +492,7 @@ class SelfMatchingAttention(nn.Module):
         
         sj = self.vT(torch.tanh(WvP + WvPbar))
         passage_mask = passage_mask.view((passage_size, 1, batch_size, 1))
-        ai = masked_softmax(sj, passage_mask, dim=0)
+        ai = F.softmax(sj, dim=0)
         expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_p * ai).sum(0)
 
@@ -592,7 +592,7 @@ class RNetOutput(nn.Module):
         ai = masked_softmax(sj, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
         start = ai.squeeze(-1)
 
-        p1 = masked_softmax(sj, passage_mask, dim=0)
+        p1 = F.softmax(sj, dim=0)
         ct = (p1 * h).sum(0)
         ht = self.RNN(ct, initial)
 
@@ -607,7 +607,7 @@ class RNetOutput(nn.Module):
         question_mask = question_mask.view((question_size, batch_size, 1))
         initial_hidden = torch.tanh(self.WuQ(q))
         initial_hidden = self.vT(initial_hidden)
-        initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0, log_softmax=True)
+        initial_hidden = F.softmax(initial_hidden, dim=0)
         a = initial_hidden * q
         return a.sum(0)
 
