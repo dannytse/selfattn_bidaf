@@ -604,7 +604,7 @@ class RNetOutput(nn.Module):
         # ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
         # end = ai_next.squeeze(-1)
 
-        return start.squeeze(), end.squeeze()
+        return start.transpose(0, 1).squeeze(), end.transpose(0, 1).squeeze()
 
     def passage_attn(self, h, passage_mask, state):
         passage_size, batch_size, _ = h.size()
@@ -616,7 +616,7 @@ class RNetOutput(nn.Module):
         logits = self.vT(logits)
         score = masked_softmax(logits, passage_mask, dim=0, log_softmax=True)
         cell_input = torch.sum(score * h, dim=0)
-        return cell_input, logits
+        return cell_input, score
 
     def initial_question_state(self, q, question_mask):
         question_size, batch_size, _ = q.size()
