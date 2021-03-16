@@ -594,7 +594,7 @@ class RNetOutput(nn.Module):
         ht = self.RNN(ct, initial)
 
         sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
-        ai_next = F.log_softmax(sj_next, dim=0)
+        ai_next = F.log_softmax(sj_next, dim=0).permute([1, 0, 2])
         end = ai_next.squeeze(-1)
 
         return start, end
