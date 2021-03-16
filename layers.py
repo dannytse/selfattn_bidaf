@@ -331,7 +331,6 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        #result = result.permute((1, 0, 2))
         result = result.transpose(1, 0) # for bidaf
         return result
 
@@ -389,7 +388,7 @@ class GatedElementBasedRNNLayer(nn.Module):
                                  num_layers=num_layers,
                                  dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage_repr, question_repr):
+    def forward(self, passage_repr, question_repr, passage_mask, question_mask):
          # ATTEMPT 2:
         # # Calculate ct
         # question_size, batch_size, _ = question_repr.size()
@@ -417,7 +416,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         passage = self.WuP(passage_repr)
         #last_hidden_state = self.WvP(prev)
 
-        question_size = question_repr.size(0)
+        question_size, batch_size, _ = question_repr.size()
         passage_size = passage_repr.size(0)
 
         question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
@@ -431,7 +430,8 @@ class GatedElementBasedRNNLayer(nn.Module):
         # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
 
         sj = self.vT(torch.tanh(question + passage))
-        ai = F.softmax(sj, dim=0)
+        passage_mask = passage_mask.view((passage_size, 1, 1, batch_size))
+        ai = masked_softmax(sj, passage_mask, dim=0) 
         expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_q * ai).sum(0)
         #ct = torch.bmm(ai, question_repr)
@@ -479,10 +479,10 @@ class SelfMatchingAttention(nn.Module):
                                    num_layers=num_layers,
                                    dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage):
+    def forward(self, passage, passage_mask):
         self.AttentionRNN.flatten_parameters()
 
-        passage_size = passage.size(0)
+        passage_size, batch_size, _ = passage.size()
 
         WvP = self.WvP(passage)
         WvPbar = self.WvPbar(passage)
@@ -491,7 +491,8 @@ class SelfMatchingAttention(nn.Module):
         WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
         
         sj = self.vT(torch.tanh(WvP + WvPbar))
-        ai = F.softmax(sj, dim=0)
+        passage_mask = passage_mask.view((passage_size, 1, 1, batch_size))
+        ai = masked_softmax(sj, passage_mask, dim=0)
         expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_p * ai).sum(0)
 
@@ -579,14 +580,16 @@ class RNetOutput(nn.Module):
         self.WuQ = nn.Linear(input_size, hidden_size, bias=True)
         
 
-    def forward(self, h, q):
-        initial = self.initial_question_state(q)
+    def forward(self, h, q, passage_mask, question_mask):
+        initial = self.initial_question_state(q, question_mask)
 
+        passage_size, batch_size, _ = h.size()
         WhP = self.WhP(h)
         WhA = self.WhA(initial)
+        passage_mask = passage_mask.view((passage_size, 1, batch_size))
 
         sj = self.vT(torch.tanh(WhP + WhA))
-        ai = F.log_softmax(sj, dim=0).permute([1, 0, 2])
+        ai = masked_softmax(sj, passage_mask, dim=0).permute([1, 0, 2])
         start = ai.squeeze(-1)
 
         p1 = F.softmax(sj, dim=0)
@@ -594,15 +597,17 @@ class RNetOutput(nn.Module):
         ht = self.RNN(ct, initial)
 
         sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
-        ai_next = F.log_softmax(sj_next, dim=0).permute([1, 0, 2])
+        ai_next = masked_softmax(sj_next, passage_mask, dim=0).permute([1, 0, 2])
         end = ai_next.squeeze(-1)
 
         return start, end
 
-    def initial_question_state(self, q):
+    def initial_question_state(self, q, question_mask):
+        question_size, batch_size, _ = q.size()
+        question_mask = question_mask.view((question_size, 1, batch_size))
         initial_hidden = torch.tanh(self.WuQ(q))
         initial_hidden = self.vT(initial_hidden)
-        initial_hidden = F.softmax(initial_hidden, dim=0)
+        initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)
         a = initial_hidden * q
         return a.sum(0)
 
