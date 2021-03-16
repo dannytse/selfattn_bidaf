@@ -140,4 +140,6 @@ class RNet(nn.Module):
 
         start, end = self.out(h_p, q_emb)
 
+        torch.cuda.empty_cache()
+
         return start, end
