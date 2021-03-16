@@ -589,10 +589,10 @@ class RNetOutput(nn.Module):
         passage_mask = passage_mask.view((passage_size, batch_size, 1))
 
         sj = self.vT(torch.tanh(WhP + WhA))
-        ai = masked_softmax(sj, passage_mask, dim=0).permute([1, 0, 2])
+        ai = masked_softmax(sj, passage_mask, dim=0).permute([1, 0, 2], log_softmax=True)
         start = ai.squeeze(-1)
 
-        p1 = F.softmax(sj, dim=0)
+        p1 = masked_softmax(sj, passage_mask, dim=0)
         ct = (p1 * h).sum(0)
         ht = self.RNN(ct, initial)
 
@@ -607,7 +607,7 @@ class RNetOutput(nn.Module):
         question_mask = question_mask.view((question_size, batch_size, 1))
         initial_hidden = torch.tanh(self.WuQ(q))
         initial_hidden = self.vT(initial_hidden)
-        initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)
+        initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0, log_softmax=True)
         a = initial_hidden * q
         return a.sum(0)
 
