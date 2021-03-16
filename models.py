@@ -147,9 +147,9 @@ class RNet(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
+        c_emb = self.emb(cw_idxs, cc_idxs)        
 
-        q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
+        q_emb = self.emb(qw_idxs, qc_idxs)    
 
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
