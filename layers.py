@@ -299,10 +299,9 @@ class WordCharEmbedding(nn.Module):
     Returns:
         emb (torch.Tensor): representation of all words in question or passage (depending on inputs)
     """
-    def __init__(self, word_vectors, char_vectors, batch_size, num_layers, cnn_size, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, num_layers, cnn_size, hidden_size, drop_prob):
         super(WordCharEmbedding, self).__init__()
 
-        self.batch_size = batch_size
         self.num_layers = num_layers
         self.hidden_size = hidden_size
 
@@ -333,6 +332,7 @@ class WordCharEmbedding(nn.Module):
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
         #result = result.permute((1, 0, 2))
+        result = result.transpose(1, 0) # for bidaf
         return result
 
         # emb = emb.permute((1, 0, 2))
@@ -363,7 +363,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
                             in the question and passage
     """
-    def __init__(self, input_size, hidden_size, batch_size, num_layers, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -457,7 +457,7 @@ class SelfMatchingAttention(nn.Module):
 
     Args:
     """
-    def __init__(self, input_size, hidden_size, batch_size, num_layers, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(SelfMatchingAttention, self).__init__()
 
         self.drop_prob = drop_prob
@@ -507,6 +507,7 @@ class SelfMatchingAttention(nn.Module):
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
+        result = result.transpose(1, 0) # for bidaf
         return result # (num_words, batch_size, hidden_size)
 
         
@@ -566,9 +567,8 @@ class RNetOutput(nn.Module):
     Args:
         x (torch.Tensor): passage representation
     """
-    def __init__(self, input_size, hidden_size, batch_size, num_layers, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(RNetOutput, self).__init__()
-        self.batch_size = batch_size
 
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WhP = nn.Linear(input_size, hidden_size, bias=False)

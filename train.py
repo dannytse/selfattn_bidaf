@@ -48,16 +48,17 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = RNet(word_vectors=word_vectors,
-                 char_vectors=char_vectors,
-                 hidden_size=args.hidden_size,
-                 batch_size=args.batch_size,
-                 drop_prob=args.drop_prob)
+    # model = RNet(word_vectors=word_vectors,
+    #              char_vectors=char_vectors,
+    #              hidden_size=args.hidden_size,
+    #              batch_size=args.batch_size,
+    #              drop_prob=args.drop_prob)
     # model.generate_placeholders(batch_size=args.batch_size,
     #                             hidden_size=args.hidden_size)
-    # model = BiDAF(word_vectors=word_vectors,
-    #                   hidden_size=args.hidden_size,
-    #                   drop_prob=args.drop_prob)
+    model = BiDAF(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                      hidden_size=args.hidden_size,
+                      drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
