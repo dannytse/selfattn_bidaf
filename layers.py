@@ -331,7 +331,7 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        result = result.transpose(1, 0) # for bidaf
+        # result = result.transpose(1, 0) # for bidaf
         return result
 
         # emb = emb.permute((1, 0, 2))
@@ -430,8 +430,8 @@ class GatedElementBasedRNNLayer(nn.Module):
         # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
 
         sj = self.vT(torch.tanh(question + passage))
-        passage_mask = passage_mask.view((passage_size, 1, 1, batch_size))
-        ai = masked_softmax(sj, passage_mask, dim=0) 
+        question_mask = question_mask.view((question_size, 1, batch_size, 1))
+        ai = masked_softmax(sj, question_mask, dim=0) 
         expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_q * ai).sum(0)
         #ct = torch.bmm(ai, question_repr)
@@ -491,7 +491,7 @@ class SelfMatchingAttention(nn.Module):
         WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
         
         sj = self.vT(torch.tanh(WvP + WvPbar))
-        passage_mask = passage_mask.view((passage_size, 1, 1, batch_size))
+        passage_mask = passage_mask.view((passage_size, 1, batch_size, 1))
         ai = masked_softmax(sj, passage_mask, dim=0)
         expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         ct = (expanded_p * ai).sum(0)
@@ -508,7 +508,7 @@ class SelfMatchingAttention(nn.Module):
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
-        result = result.transpose(1, 0) # for bidaf
+        # result = result.transpose(1, 0) # for bidaf
         return result # (num_words, batch_size, hidden_size)
 
         
@@ -586,7 +586,7 @@ class RNetOutput(nn.Module):
         passage_size, batch_size, _ = h.size()
         WhP = self.WhP(h)
         WhA = self.WhA(initial)
-        passage_mask = passage_mask.view((passage_size, 1, batch_size))
+        passage_mask = passage_mask.view((passage_size, batch_size, 1))
 
         sj = self.vT(torch.tanh(WhP + WhA))
         ai = masked_softmax(sj, passage_mask, dim=0).permute([1, 0, 2])
@@ -604,7 +604,7 @@ class RNetOutput(nn.Module):
 
     def initial_question_state(self, q, question_mask):
         question_size, batch_size, _ = q.size()
-        question_mask = question_mask.view((question_size, 1, batch_size))
+        question_mask = question_mask.view((question_size, batch_size, 1))
         initial_hidden = torch.tanh(self.WuQ(q))
         initial_hidden = self.vT(initial_hidden)
         initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)

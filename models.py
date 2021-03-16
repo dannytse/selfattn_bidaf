@@ -130,7 +130,7 @@ class RNet(nn.Module):
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 
-        self.att = layers.SelfMatchingAttention(input_size=2 * hidden_size,
+        self.att = layers.SelfMatchingAttention(input_size=hidden_size,
                                                 hidden_size=hidden_size,
                                                 num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
@@ -153,7 +153,7 @@ class RNet(nn.Module):
 
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
-        h_p = self.att(c_emb, c_mask)
+        h_p = self.att(v_p, c_mask)
 
         start, end = self.out(h_p, q_emb, c_mask, q_mask)
 
