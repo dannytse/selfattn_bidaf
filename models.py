@@ -118,6 +118,15 @@ class RNet(nn.Module):
     def __init__(self, word_vectors, char_vectors, batch_size, device, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
         self.num_layers = 1
+
+        self.emb2 = layers.Embedding(word_vectors=word_vectors,
+                                    hidden_size=hidden_size,
+                                    drop_prob=drop_prob)
+
+        self.enc = layers.RNNEncoder(input_size=hidden_size,
+                                     hidden_size=hidden_size,
+                                     num_layers=1,
+                                     drop_prob=drop_prob)
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
@@ -149,9 +158,15 @@ class RNet(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_emb = self.emb(cw_idxs, cc_idxs)        
+        # c_emb = self.emb(cw_idxs, cc_idxs)        
 
-        q_emb = self.emb(qw_idxs, qc_idxs)    
+        # q_emb = self.emb(qw_idxs, qc_idxs)    
+
+        cc = self.emb2(cw_idxs)        # (batch_size, c_len, hidden_size)
+        qq = self.emb2(qw_idxs)       # (batch_size, q_len, hidden_size)
+
+        c_emb = self.enc(cc, c_len).transpose(0, 1)     # (batch_size, c_len, 2 * hidden_size)
+        q_emb = self.enc(qq, q_len).transpose(0, 1)     # (batch_size, q_len, 2 * hidden_size)
 
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
