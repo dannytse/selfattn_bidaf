@@ -610,7 +610,6 @@ class RNetOutput(nn.Module):
         passage_mask = passage_mask.view((passage_size, batch_size, 1))
         start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
         end = masked_softmax(end, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
-        pdb.set_trace()
 
         return start, end
 
