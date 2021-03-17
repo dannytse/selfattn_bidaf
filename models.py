@@ -89,7 +89,7 @@ class BiDAF(nn.Module):
 
         mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        out = self.out(h_p, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         torch.cuda.empty_cache()
 
@@ -151,6 +151,14 @@ class RNet(nn.Module):
                                      num_layers=self.num_layers,
                                      drop_prob=drop_prob)
 
+        self.mod = layers.RNNEncoder(input_size=2 * hidden_size,
+                                     hidden_size=hidden_size,
+                                     num_layers=2,
+                                     drop_prob=drop_prob)
+
+        self.bidafout = layers.BiDAFOutput(hidden_size=hidden_size,
+                                      drop_prob=drop_prob)
+
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
 
@@ -158,21 +166,26 @@ class RNet(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        # c_emb = self.emb(cw_idxs, cc_idxs)        
+        c_emb = self.emb(cw_idxs, cc_idxs)        
 
-        # q_emb = self.emb(qw_idxs, qc_idxs)    
+        q_emb = self.emb(qw_idxs, qc_idxs)    
 
-        cc = self.emb2(cw_idxs)        # (batch_size, c_len, hidden_size)
-        qq = self.emb2(qw_idxs)       # (batch_size, q_len, hidden_size)
+        # cc = self.emb2(cw_idxs)        # (batch_size, c_len, hidden_size)
+        # qq = self.emb2(qw_idxs)       # (batch_size, q_len, hidden_size)
 
-        c_emb = self.enc(cc, c_len).transpose(0, 1)     # (batch_size, c_len, 2 * hidden_size)
-        q_emb = self.enc(qq, q_len).transpose(0, 1)     # (batch_size, q_len, 2 * hidden_size)
+        # c_emb = self.enc(cc, c_len).transpose(0, 1)     # (batch_size, c_len, 2 * hidden_size)
+        # q_emb = self.enc(qq, q_len).transpose(0, 1)     # (batch_size, q_len, 2 * hidden_size)
+
 
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
         h_p = self.att(v_p, c_mask)
 
-        start, end = self.out(h_p, q_emb, c_mask, q_mask)
+        h_p = h_p.transpose(0, 1)
+
+        mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        start, end = self.bidafout(h_p, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         torch.cuda.empty_cache()
 
