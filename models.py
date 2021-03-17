@@ -115,7 +115,7 @@ class RNet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, batch_size, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, batch_size, device, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
         self.num_layers = 1
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
@@ -127,6 +127,7 @@ class RNet(nn.Module):
 
         self.gated_rnn = layers.GatedElementBasedRNNLayer(input_size=2 * hidden_size, # bidirectional output from prev layer
                                                           hidden_size=hidden_size,
+                                                          device=device,
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 

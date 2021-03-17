@@ -361,11 +361,12 @@ class GatedElementBasedRNNLayer(nn.Module):
         vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
                             in the question and passage
     """
-    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
+    def __init__(self, input_size, device, hidden_size, num_layers, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.drop_prob = drop_prob
+        self.device = device
 
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
@@ -410,7 +411,8 @@ class GatedElementBasedRNNLayer(nn.Module):
             utct = utct * self.gate(utct)
             vt = self.cell(utct, prev)
             result[i,:,:] = vt
-            prev = vt
+            del prev
+            prev = vt.to(self.device)
 
         return result
 
