@@ -133,6 +133,7 @@ class RNet(nn.Module):
 
         self.att = layers.SelfMatchingAttention(input_size=hidden_size,
                                                 hidden_size=hidden_size,
+                                                device=device,
                                                 num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
 

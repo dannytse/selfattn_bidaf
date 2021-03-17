@@ -458,9 +458,11 @@ class SelfMatchingAttention(nn.Module):
 
     Args:
     """
-    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
+    def __init__(self, input_size, hidden_size, device, num_layers, drop_prob):
         super(SelfMatchingAttention, self).__init__()
 
+        self.device = device
+        self.hidden_size = hidden_size
         self.drop_prob = drop_prob
         self.num_layers = num_layers
 
@@ -469,49 +471,75 @@ class SelfMatchingAttention(nn.Module):
         self.WvPbar = nn.Linear(input_size, hidden_size, bias=False)
 
         self.gate = nn.Sequential(
-            nn.Linear(2 * input_size, 2 * input_size, bias=False),
+            nn.Linear(2 * hidden_size, 2 * hidden_size, bias=False),
             nn.Sigmoid()
         )
 
-        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
+        self.AttentionRNN = nn.GRU(input_size=hidden_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
                                    num_layers=num_layers,
                                    dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage, passage_mask):
-        self.AttentionRNN.flatten_parameters()
+    def forward(self, passage_repr, passage_mask):
 
-        passage_size, batch_size, _ = passage.size()
+        passage_size, batch_size, _ = passage_repr.size()
 
-        WvP = self.WvP(passage)
-        WvPbar = self.WvPbar(passage)
+        prev = torch.zeros((2, batch_size, self.hidden_size)).to(self.device)
+        result = torch.zeros((passage_size, batch_size, 2 * self.hidden_size)).to(self.device)
+        passage_repeat = self.WvP(passage_repr)
+        passage = self.WvPbar(passage_repr)
 
-        WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
-        passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
+        for i in range(passage_size):
+            curr_passage = passage[i,:,:].to(self.device)
+            sj = curr_passage.unsqueeze(0) + passage_repeat
+            sj = torch.tanh(sj)
+            sj = self.vT(sj)
+            ai = F.softmax(sj, dim=0)
+            ct = (passage * ai).sum(0)
+            utct = torch.cat((curr_passage, ct), dim=-1)
+            utct = utct * self.gate(utct)
+            utct = utct.unsqueeze(0)
+            vt, prev = self.AttentionRNN(utct, prev)
+            result[i,:,:] = vt.squeeze(0)
+            prev = prev.to(self.device)
+        return result
+
+        # self.AttentionRNN.flatten_parameters()
+
+        # passage_size, batch_size, _ = passage.size()
+
+        # WvP = self.WvP(passage)
+        # WvPbar = self.WvPbar(passage)
+
+        # WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
+        # passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
         
-        sj = self.vT(torch.tanh(WvP + WvPbar))
-        ai = masked_softmax(sj, passage_mask, dim=0)
-        expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        ct = (expanded_p * ai).sum(0)
+        # sj = self.vT(torch.tanh(WvP + WvPbar))
+        # ai = masked_softmax(sj, passage_mask, dim=0)
+        # expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # ct = (expanded_p * ai).sum(0)
 
-        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
-        ct = torch.cat((passage, ct), dim=2)
+        # # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        # ct = torch.cat((passage, ct), dim=2)
 
-        # Apply Gate.
-        ct = torch.mul(ct, self.gate(ct))
+        # # Apply Gate.
+        # ct = torch.mul(ct, self.gate(ct))
 
-        #ct = ct.permute((1, 0, 2))
-        result, _ = self.AttentionRNN(ct)
-        #result = result.permute((1, 0, 2))
+        # #ct = ct.permute((1, 0, 2))
+        # result, _ = self.AttentionRNN(ct)
+        # #result = result.permute((1, 0, 2))
 
-        # Dropout
-        result = F.dropout(result, self.drop_prob, self.training)
-        # result = result.transpose(1, 0) # for bidaf
-        return result # (num_words, batch_size, hidden_size)
+        # # Dropout
+        # result = F.dropout(result, self.drop_prob, self.training)
+        # # result = result.transpose(1, 0) # for bidaf
+        # return result # (num_words, batch_size, hidden_size)
+
+
 
         
+        # IMP 2
         # self.AttentionRNN.flatten_parameters()
 
         # n_words = passage.size(1)
@@ -535,30 +563,6 @@ class SelfMatchingAttention(nn.Module):
 
         # # Dropout
         # result = F.dropout(result, self.drop_prob, self.training)
-        # return result
-
-        # Imp 2
-
-        # htp = torch.zeros((passage.size(1), passage.size(0), 2 * passage.size(2)))
-        # n_words = passage.size(1)
-        # WvP = self.WvP(passage)
-        # WvPbar = self.WvPbar(passage)
-
-        # for i in range(n_words):
-        #     curr_WvPbar = WvPbar[:,i,:]
-        #     sj = self.vT(torch.tanh(WvP + curr_WvPbar.unsqueeze(1)))
-        #     a = F.softmax(sj, dim=1)
-        #     passage_vec = passage[:,i,:].unsqueeze(1)
-        #     ct = torch.bmm(a, passage_vec).sum(1).unsqueeze(1)
-        #     concat = torch.cat((passage_vec, ct), dim=-1)
-        #     gated = torch.mul(concat, self.gate(concat))
-        #     gated = gated.permute((1, 0, 2))
-        #     pdb.set_trace()
-        #     rnn_result, _ = self.AttentionRNN(gated)
-        #     htp[i] = rnn_result
-        
-        # htp = htp.permute((1, 0, 2))
-        # result = F.dropout(htp, self.drop_prob, self.training)
         # return result
 
 
