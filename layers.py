@@ -401,7 +401,7 @@ class GatedElementBasedRNNLayer(nn.Module):
 
         for i in range(passage_size):
             last_hidden_state = self.WvP(prev).unsqueeze(0)
-            curr_passage = passage[i,:,:]
+            curr_passage = passage[i,:,:].to(self.device)
             sj = curr_passage.unsqueeze(0) + question + last_hidden_state
             sj = torch.tanh(sj)
             sj = self.vT(sj)
