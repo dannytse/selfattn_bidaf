@@ -395,7 +395,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         passage_size = passage_repr.size(0)
 
         prev = torch.zeros((batch_size, self.hidden_size)).to(self.device)
-        result = torch.zeros((passage_size, batch_size, self.hidden_size))
+        result = torch.zeros((passage_size, batch_size, self.hidden_size)).to(self.device)
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
 
