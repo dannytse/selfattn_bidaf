@@ -411,7 +411,7 @@ class GatedElementBasedRNNLayer(nn.Module):
             utct = utct * self.gate(utct)
             vt = self.cell(utct, prev)
             result[i,:,:] = vt
-            prev = vt
+            prev = vt.to(self.device)
 
         return result
 
