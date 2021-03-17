@@ -606,9 +606,11 @@ class RNetOutput(nn.Module):
         # sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
         # ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
         # end = ai_next.squeeze(-1)
-
+        passage_size, batch_size, _ = h.size()
+        passage_mask = passage_mask.view((passage_size, batch_size, 1))
         start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
         end = masked_softmax(end, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
+        pdb.set_trace()
 
         return start, end
 
