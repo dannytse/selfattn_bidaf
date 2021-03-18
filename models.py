@@ -57,7 +57,7 @@ class BiDAF(nn.Module):
                                      num_layers=2,
                                      drop_prob=drop_prob)
 
-        self.selfatt = layers.SelfMatchingAttention(input_size=8 * hidden_size,
+        self.selfatt = layers.SelfMatchingAttention_Loop(input_size=8 * hidden_size,
                                                 hidden_size=hidden_size,
                                                 num_layers=1,
                                                 device=self.device,

@@ -44,15 +44,16 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = RNet(word_vectors=word_vectors,
-                 char_vectors=char_vectors,
-                 batch_size=args.batch_size,
-                 device=device,
-                 hidden_size=args.hidden_size)
-    # model = BiDAF(word_vectors=word_vectors,
-    #                 char_vectors=char_vectors,
-    #                   hidden_size=args.hidden_size,
-    #                   drop_prob=0)
+    # model = RNet(word_vectors=word_vectors,
+    #              char_vectors=char_vectors,
+    #              batch_size=args.batch_size,
+    #              device=device,
+    #              hidden_size=args.hidden_size)
+    model = BiDAF(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                    device=device,
+                      hidden_size=args.hidden_size,
+                      drop_prob=0)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)

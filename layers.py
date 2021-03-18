@@ -329,7 +329,7 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        # result = result.transpose(1, 0) # for bidaf
+        result = result.transpose(1, 0) # for bidaf
         return result
 
 class GatedElementBasedRNNLayer(nn.Module):
@@ -559,7 +559,7 @@ class SelfMatchingAttention_Loop(nn.Module):
     def forward(self, passage_repr, passage_mask):
         passage_size, batch_size, _ = passage_repr.size()
 
-        prev = torch.zeros((2, batch_size, self.hidden_size)).to(self.device)
+        prev = torch.zeros((6, batch_size, self.hidden_size)).to(self.device)
         result = torch.zeros((passage_size, batch_size, 2 * self.hidden_size)).to(self.device)
         passage_repeat = self.WvP(passage_repr)
         passage = self.WvPbar(passage_repr)
@@ -579,7 +579,7 @@ class SelfMatchingAttention_Loop(nn.Module):
             prev = prev.to(self.device)
 
         result = F.dropout(result, self.drop_prob, self.training)
-        # result = result.transpose(1, 0) # for bidaf
+        result = result.transpose(1, 0) # for bidaf
         return result
 
 
