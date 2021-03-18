@@ -497,7 +497,7 @@ class SelfMatchingAttention(nn.Module):
             nn.Sigmoid()
         )
 
-        self.AttentionRNN = nn.LSTM(input_size=input_size * 2,
+        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
                                    num_layers=3,
@@ -511,14 +511,14 @@ class SelfMatchingAttention(nn.Module):
         WvP = self.WvP(passage)
         WvPbar = self.WvPbar(passage)
 
-        WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
+        WvP = WvP.unsqueeze(0)
+        WvPbar = WvPbar.unsqueeze(1)
         passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
         
         sj = self.vT(torch.tanh(WvP + WvPbar))
-        ai = masked_softmax(sj, passage_mask, dim=0)
-        expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        ct = (expanded_p * ai).sum(0)
+        ai = masked_softmax(sj, passage_mask, dim=0).sum(0)
+        #expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        ct = (expanded_p * ai)
 
         # Concatenate utp (passage_repr) and ct (attention-pooling vector)
         ct = torch.cat((passage, ct), dim=2)
