@@ -333,7 +333,6 @@ class WordCharEmbedding(nn.Module):
         # result = result.transpose(1, 0) # for bidaf
         return result
 
-
 class GatedElementBasedRNNLayer(nn.Module):
     """Gated Element-Based RNN Layer.
 
@@ -347,6 +346,75 @@ class GatedElementBasedRNNLayer(nn.Module):
     """
     def __init__(self, input_size, device, hidden_size, num_layers, drop_prob):
         super(GatedElementBasedRNNLayer, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.drop_prob = drop_prob
+        self.device = device
+
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
+        self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
+        self.WuP = nn.Linear(input_size, hidden_size, bias=False)
+        self.WvP = nn.Linear(hidden_size, hidden_size, bias=False)
+
+        self.gate = nn.Sequential(
+            nn.Linear(2 * input_size, 2 * input_size, bias=False),
+            nn.Sigmoid()
+        )
+
+        self.match_LSTM = nn.GRU(input_size=input_size * 2,
+                                 hidden_size=hidden_size,
+                                 num_layers=num_layers,
+                                 dropout=drop_prob if num_layers > 1 else 0.)
+
+    def forward(self, passage_repr, question_repr, passage_mask, question_mask):
+        self.match_LSTM.flatten_parameters()
+
+        # Calculate ct
+        question = self.WuQ(question_repr)
+        passage = self.WuP(passage_repr)
+        #last_hidden_state = self.WvP(prev)
+
+        question_size, batch_size, _ = question_repr.size()
+        passage_size = passage_repr.size(0)
+
+        question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        passage = passage.repeat(question_size, 1, 1, 1)
+        question_mask = question_mask.view(question_size, 1, batch_size, 1)
+
+        # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
+        # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
+
+        sj = self.vT(torch.tanh(question + passage))
+        ai = masked_softmax(sj, question_mask, dim=0)
+        expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        ct = (expanded_q * ai).sum(0)
+
+        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        ct = torch.cat((passage_repr, ct), dim=2)
+
+        # Apply Gate.
+        ct = torch.mul(ct, self.gate(ct))
+
+        result, _ = self.match_LSTM(ct)
+
+        # Dropout
+        result = F.dropout(result, self.drop_prob, self.training)
+        return result # (num_words, batch_size, hidden_size)
+
+
+class GatedElementBasedRNNLayer_Loop(nn.Module):
+    """Gated Element-Based RNN Layer.
+
+    Args:
+        passage_repr: passage representation
+        question_repr: question representation
+
+    Returns:
+        vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
+                            in the question and passage
+    """
+    def __init__(self, input_size, device, hidden_size, num_layers, drop_prob):
+        super(GatedElementBasedRNNLayer_Loop, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.drop_prob = drop_prob
@@ -398,45 +466,8 @@ class GatedElementBasedRNNLayer(nn.Module):
             prev = vt.to(self.device)
 
         return result
-        
-        # self.match_LSTM.flatten_parameters()
-
-        # # Calculate ct
-        # question = self.WuQ(question_repr)
-        # passage = self.WuP(passage_repr)
-        # #last_hidden_state = self.WvP(prev)
-
-        # question_size, batch_size, _ = question_repr.size()
-        # passage_size = passage_repr.size(0)
-
-        # question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        # passage = passage.repeat(question_size, 1, 1, 1)
-        # question_mask = question_mask.view(question_size, 1, batch_size, 1)
-
-        # # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
-        # # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
-
-        # sj = self.vT(torch.tanh(question + passage))
-        # ai = masked_softmax(sj, question_mask, dim=0)
-        # expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        # ct = (expanded_q * ai).sum(0)
-
-        # # Concatenate utp (passage_repr) and ct (attention-pooling vector)
-        # ct = torch.cat((passage_repr, ct), dim=2)
-
-        # # Apply Gate.
-        # ct = torch.mul(ct, self.gate(ct))
-
-        # #ct = ct.permute((1, 0, 2))
-        # result, _ = self.match_LSTM(ct)
-        # #result = result.permute((1, 0, 2))
-
-        # # Dropout
-        # result = F.dropout(result, self.drop_prob, self.training)
-        # return result # (num_words, batch_size, hidden_size)
 
         
-
 class SelfMatchingAttention(nn.Module):
     """Self-Matching Attention Layer. Directly matches question-aware passage representation against itself.
 
@@ -444,6 +475,69 @@ class SelfMatchingAttention(nn.Module):
     """
     def __init__(self, input_size, hidden_size, device, num_layers, drop_prob):
         super(SelfMatchingAttention, self).__init__()
+
+        self.device = device
+        self.hidden_size = hidden_size
+        self.drop_prob = drop_prob
+        self.num_layers = num_layers
+
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
+        self.WvP = nn.Linear(input_size, hidden_size, bias=False)
+        self.WvPbar = nn.Linear(input_size, hidden_size, bias=False)
+
+        self.gate = nn.Sequential(
+            nn.Linear(2 * input_size, 2 * input_size, bias=False),
+            nn.Sigmoid()
+        )
+
+        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
+                                   hidden_size=hidden_size,
+                                   bidirectional=True,
+                                   num_layers=num_layers,
+                                   dropout=drop_prob if num_layers > 1 else 0.)
+
+    def forward(self, passage, passage_mask):
+        # # IMP 1
+        self.AttentionRNN.flatten_parameters()
+
+        passage_size, batch_size, _ = passage.size()
+
+        WvP = self.WvP(passage)
+        WvPbar = self.WvPbar(passage)
+
+        WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
+        passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
+        
+        sj = self.vT(torch.tanh(WvP + WvPbar))
+        ai = masked_softmax(sj, passage_mask, dim=0)
+        expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        ct = (expanded_p * ai).sum(0)
+
+        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        ct = torch.cat((passage, ct), dim=2)
+
+        # Apply Gate.
+        ct = torch.mul(ct, self.gate(ct))
+
+        #ct = ct.permute((1, 0, 2))
+        result, _ = self.AttentionRNN(ct)
+        #result = result.permute((1, 0, 2))
+
+        # Dropout
+        result = F.dropout(result, self.drop_prob, self.training)
+        # result = result.transpose(1, 0) # for bidaf
+        return result # (num_words, batch_size, hidden_size)
+
+
+
+class SelfMatchingAttention_Loop(nn.Module):
+    """Self-Matching Attention Layer. Directly matches question-aware passage representation against itself.
+
+    Args:
+    """
+    def __init__(self, input_size, hidden_size, device, num_layers, drop_prob):
+        super(SelfMatchingAttention_Loop, self).__init__()
 
         self.device = device
         self.hidden_size = hidden_size
@@ -490,66 +584,6 @@ class SelfMatchingAttention(nn.Module):
         result = F.dropout(result, self.drop_prob, self.training)
         # result = result.transpose(1, 0) # for bidaf
         return result
-
-        # # IMP 1
-        # self.AttentionRNN.flatten_parameters()
-
-        # passage_size, batch_size, _ = passage.size()
-
-        # WvP = self.WvP(passage)
-        # WvPbar = self.WvPbar(passage)
-
-        # WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        # WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
-        # passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
-        
-        # sj = self.vT(torch.tanh(WvP + WvPbar))
-        # ai = masked_softmax(sj, passage_mask, dim=0)
-        # expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        # ct = (expanded_p * ai).sum(0)
-
-        # # Concatenate utp (passage_repr) and ct (attention-pooling vector)
-        # ct = torch.cat((passage, ct), dim=2)
-
-        # # Apply Gate.
-        # ct = torch.mul(ct, self.gate(ct))
-
-        # #ct = ct.permute((1, 0, 2))
-        # result, _ = self.AttentionRNN(ct)
-        # #result = result.permute((1, 0, 2))
-
-        # # Dropout
-        # result = F.dropout(result, self.drop_prob, self.training)
-        # # result = result.transpose(1, 0) # for bidaf
-        # return result # (num_words, batch_size, hidden_size)
-
-
-
-        # IMP 2
-        # self.AttentionRNN.flatten_parameters()
-
-        # n_words = passage.size(1)
-        # WvP = self.WvP(passage)
-        # WvPbar = self.WvPbar(passage)
-
-        # passage_iter = WvP.unsqueeze(2).repeat(1, 1, n_words, 1)
-        # passage_repeat = WvPbar.unsqueeze(1).repeat(1, n_words, 1, 1)
-
-        # sj = self.vT(torch.tanh(passage_iter + passage_repeat))
-        # ai = F.softmax(sj, dim=1)
-        # ai = ai.squeeze(-1)
-        # ct = torch.bmm(ai, passage)
-        
-        # vct = torch.cat((passage, ct), dim=2)
-        # gated_vct = torch.mul(vct, self.gate(vct))
-
-        # #gated_vct = gated_vct.permute((1, 0, 2))
-        # result, _ = self.AttentionRNN(gated_vct)
-        # #result = result.permute((1, 0, 2))
-
-        # # Dropout
-        # result = F.dropout(result, self.drop_prob, self.training)
-        # return result
 
 
 class RNetOutput(nn.Module):
