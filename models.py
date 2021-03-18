@@ -143,7 +143,10 @@ class RNet(nn.Module):
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 
-        self.att = layers.SelfMatchingAttention(input_size=2 * hidden_size,
+        self.bidafatt = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+                                         drop_prob=drop_prob)
+
+        self.att = layers.SelfMatchingAttention(input_size=8 * hidden_size,
                                                 hidden_size=hidden_size,
                                                 device=device,
                                                 num_layers=self.num_layers,
@@ -183,7 +186,7 @@ class RNet(nn.Module):
 
         h_p = self.att(v_p, c_mask)
 
-        start, end = self.out(h_p, q_emb, c_mask, q_mask)
+        start, end = self.out(h_p, q_emb.transpose(1, 0), c_mask, q_mask)
 
         # h_p = h_p.transpose(0, 1)
 

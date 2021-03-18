@@ -334,7 +334,7 @@ class WordCharEmbedding(nn.Module):
         # emb = emb.permute((1, 0, 2))
         # result, _ = self.GRU(emb)
         result = self.rnn(emb, mask.sum(-1))
-        result = result.permute([1, 0, 2])
+        # result = result.permute([1, 0, 2])
         #result = result.transpose(1, 0) # for bidaf
         return result
 
@@ -365,7 +365,7 @@ class GatedElementBasedRNNLayer(nn.Module):
             nn.Linear(2 * input_size, 2 * input_size, bias=False),
             nn.Sigmoid()
         )
-        self.match_LSTM = nn.LSTM(input_size=input_size * 2,
+        self.match_LSTM = nn.GRU(input_size=input_size * 2,
                                  hidden_size=hidden_size,
                                  bidirectional=True,
                                  num_layers=3,
@@ -602,12 +602,9 @@ class RNetOutput(nn.Module):
 
         self.RNN = nn.GRUCell(input_size, input_size, False)
 
-        self.WhA = nn.Linear(input_size, input_size, bias=False)
-
-        self.attn_mech = nn.Sequential(
-            nn.Linear(input_size, hidden_size, bias=False),
-            nn.Linear(hidden_size, 1)
-        )
+        self.WhA = nn.Linear(input_size, hidden_size, bias=False)
+        self.WhP = nn.Linear(input_size, hidden_size, bias=False)
+        self.vT = nn.Linear(hidden_size, 1, bias=False)
         
         self.question_transform = nn.Sequential(
             nn.Linear(input_size, hidden_size, bias=True), # Vq included here.
@@ -615,23 +612,25 @@ class RNetOutput(nn.Module):
         )
         
     def forward(self, h, q, passage_mask, question_mask):
-        orig_pm = passage_mask
         passage_size, batch_size, _ = h.size()
         question_size, _, _ = q.size()
+
         passage_mask = passage_mask.view((passage_size, batch_size, 1))
         question_mask = question_mask.view((question_size, batch_size, 1))
 
         initial = masked_softmax(q * self.question_transform(q), question_mask).sum(0)
         unsqueezed = initial.unsqueeze(0)
-        ptr1 = self.attn_mech(h + self.WhA(unsqueezed))
+        ptr1 = self.vT(self.WhP(h) + self.WhA(unsqueezed))
+
         start = masked_softmax(ptr1, passage_mask, log_softmax=True)
         ct = masked_softmax(ptr1, passage_mask)
-        ct = (ct * h).sum(0)
 
-        hta = self.RNN(ct, initial)
-        
-        ptr2 = self.attn_mech(h + self.WhA(hta))
+        ct = (ct * h).sum(0)
+        hta = self.RNN(ct, initial).unsqueeze(0)
+
+        ptr2 = self.vT(self.WhP(h) + self.WhA(hta))
         end = masked_softmax(ptr2, passage_mask, log_softmax=True)
+
         return start.transpose(0, 1).squeeze(-1), end.transpose(0, 1).squeeze(-1)
 
 
