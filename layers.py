@@ -330,7 +330,7 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        result = result.transpose(1, 0) # for bidaf
+        # result = result.transpose(1, 0) # for bidaf
         return result
 
 
@@ -355,85 +355,85 @@ class GatedElementBasedRNNLayer(nn.Module):
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WuQ = nn.Linear(input_size, hidden_size, bias=False)
         self.WuP = nn.Linear(input_size, hidden_size, bias=False)
-        # self.WvP = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.WvP = nn.Linear(hidden_size, hidden_size, bias=False)
 
         self.gate = nn.Sequential(
-            nn.Linear(2 * input_size, 2 * input_size, bias=False),
+            nn.Linear(2 * hidden_size, 2 * hidden_size, bias=False),
             nn.Sigmoid()
         )
 
-        # self.cell = nn.GRUCell(input_size=2 * hidden_size,
-        #                        hidden_size=hidden_size,
-        #                        bias=False)
+        self.cell = nn.GRUCell(input_size=2 * hidden_size,
+                               hidden_size=hidden_size,
+                               bias=False)
 
-        self.match_LSTM = nn.GRU(input_size=input_size * 2,
+        self.match_LSTM = nn.GRU(input_size=hidden_size * 2,
                                  hidden_size=hidden_size,
                                  num_layers=num_layers,
                                  dropout=drop_prob if num_layers > 1 else 0.)
 
     def forward(self, passage_repr, question_repr, passage_mask, question_mask):
          # ATTEMPT 2:
-        # # Calculate ct
-
-        # question_size, batch_size, _ = question_repr.size()
-        # passage_size = passage_repr.size(0)
-
-        # prev = torch.zeros((batch_size, self.hidden_size)).to(self.device)
-        # result = torch.zeros((passage_size, batch_size, self.hidden_size)).to(self.device)
-        # question = self.WuQ(question_repr)
-        # passage = self.WuP(passage_repr)
-
-        # for i in range(passage_size):
-        #     last_hidden_state = self.WvP(prev).unsqueeze(0)
-        #     curr_passage = passage[i,:,:].to(self.device)
-        #     sj = curr_passage.unsqueeze(0) + question + last_hidden_state
-        #     sj = torch.tanh(sj)
-        #     sj = self.vT(sj)
-        #     ai = F.softmax(sj, dim=0)
-        #     ct = (question * ai).sum(0)
-        #     utct = torch.cat((curr_passage, ct), dim=-1)
-        #     utct = utct * self.gate(utct)
-        #     vt = self.cell(utct, prev)
-        #     result[i,:,:] = vt
-        #     prev = vt.to(self.device)
-
-        # return result
-        
-        self.match_LSTM.flatten_parameters()
-
         # Calculate ct
-        question = self.WuQ(question_repr)
-        passage = self.WuP(passage_repr)
-        #last_hidden_state = self.WvP(prev)
 
         question_size, batch_size, _ = question_repr.size()
         passage_size = passage_repr.size(0)
 
-        question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        passage = passage.repeat(question_size, 1, 1, 1)
-        question_mask = question_mask.view(question_size, 1, batch_size, 1)
+        prev = torch.zeros((batch_size, self.hidden_size)).to(self.device)
+        result = torch.zeros((passage_size, batch_size, self.hidden_size)).to(self.device)
+        question = self.WuQ(question_repr)
+        passage = self.WuP(passage_repr)
 
-        # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
-        # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
+        for i in range(passage_size):
+            last_hidden_state = self.WvP(prev).unsqueeze(0)
+            curr_passage = passage[i,:,:].to(self.device)
+            sj = curr_passage.unsqueeze(0) + question + last_hidden_state
+            sj = torch.tanh(sj)
+            sj = self.vT(sj)
+            ai = F.softmax(sj, dim=0)
+            ct = (question * ai).sum(0)
+            utct = torch.cat((curr_passage, ct), dim=-1)
+            utct = utct * self.gate(utct)
+            vt = self.cell(utct, prev)
+            result[i,:,:] = vt
+            prev = vt.to(self.device)
 
-        sj = self.vT(torch.tanh(question + passage))
-        ai = masked_softmax(sj, question_mask, dim=0)
-        expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        ct = (expanded_q * ai).sum(0)
+        return result
+        
+        # self.match_LSTM.flatten_parameters()
 
-        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
-        ct = torch.cat((passage_repr, ct), dim=2)
+        # # Calculate ct
+        # question = self.WuQ(question_repr)
+        # passage = self.WuP(passage_repr)
+        # #last_hidden_state = self.WvP(prev)
 
-        # Apply Gate.
-        ct = torch.mul(ct, self.gate(ct))
+        # question_size, batch_size, _ = question_repr.size()
+        # passage_size = passage_repr.size(0)
 
-        #ct = ct.permute((1, 0, 2))
-        result, _ = self.match_LSTM(ct)
-        #result = result.permute((1, 0, 2))
+        # question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # passage = passage.repeat(question_size, 1, 1, 1)
+        # question_mask = question_mask.view(question_size, 1, batch_size, 1)
 
-        # Dropout
-        result = F.dropout(result, self.drop_prob, self.training)
-        return result # (num_words, batch_size, hidden_size)
+        # # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
+        # # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
+
+        # sj = self.vT(torch.tanh(question + passage))
+        # ai = masked_softmax(sj, question_mask, dim=0)
+        # expanded_q = question_repr.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # ct = (expanded_q * ai).sum(0)
+
+        # # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        # ct = torch.cat((passage_repr, ct), dim=2)
+
+        # # Apply Gate.
+        # ct = torch.mul(ct, self.gate(ct))
+
+        # #ct = ct.permute((1, 0, 2))
+        # result, _ = self.match_LSTM(ct)
+        # #result = result.permute((1, 0, 2))
+
+        # # Dropout
+        # result = F.dropout(result, self.drop_prob, self.training)
+        # return result # (num_words, batch_size, hidden_size)
 
         
 
@@ -488,7 +488,7 @@ class SelfMatchingAttention(nn.Module):
             prev = prev.to(self.device)
 
         result = F.dropout(result, self.drop_prob, self.training)
-        result = result.transpose(1, 0) # for bidaf
+        # result = result.transpose(1, 0) # for bidaf
         return result
 
         # # IMP 1
@@ -561,75 +561,118 @@ class RNetOutput(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(RNetOutput, self).__init__()
 
-        self.vT = nn.Linear(hidden_size, 1, bias=False)
-        self.WhP = nn.Linear(input_size, hidden_size, bias=False)
-        self.WhA = nn.Linear(2 * input_size, hidden_size, bias=False)
-
         self.RNN = nn.GRUCell(input_size, input_size, False)
 
-        # Vq included here.
-        self.WuQ = nn.Linear(input_size, hidden_size, bias=True)
+        self.WhA = nn.Linear(input_size, input_size, bias=False)
+
+        self.attn_mech = nn.Sequential(
+            nn.Linear(input_size, hidden_size, bias=False),
+            nn.Linear(hidden_size, 1)
+        )
+
+        self.question_transform = nn.Sequential(
+            nn.Linear(input_size, hidden_size, bias=True), # Vq included here.
+            nn.Linear(hidden_size, 1)
+        )
+        
+    def forward(self, h, q, passage_mask, question_mask):
+        passage_size, batch_size, _ = h.size()
+        question_size, _, _ = q.size()
+        passage_mask = passage_mask.view((passage_size, batch_size, 1))
+        question_mask = question_mask.view((question_size, batch_size, 1))
+        initial = masked_softmax(q * self.question_transform(q), question_mask).sum(0)
+        unsqueezed = initial.unsqueeze(0)
+        ptr1 = self.attn_mech(h + self.WhA(unsqueezed))
+        start = masked_softmax(ptr1, passage_mask, log_softmax=True)
+        ct = masked_softmax(ptr1, passage_mask)
+        ct = (ct * h).sum(0)
+        hta = self.RNN(ct, initial)
+        ptr2 = self.attn_mech(h + self.WhA(hta))
+        end = masked_softmax(ptr2, passage_mask, log_softmax=True)
+        return start.transpose(0, 1).squeeze(-1), end.transpose(0, 1).squeeze(-1)
+
+
+
+# class RNetOutput(nn.Module):
+#     """Output layer used by R-Net for question answering. Uses pointer networks.
+
+#     Args:
+#         x (torch.Tensor): passage representation
+#     """
+#     def __init__(self, input_size, hidden_size, num_layers, drop_prob):
+#         super(RNetOutput, self).__init__()
+
+#         self.vT = nn.Linear(hidden_size, 1, bias=False)
+#         self.WhP = nn.Linear(input_size, hidden_size, bias=False)
+#         self.WhA = nn.Linear(2 * input_size, hidden_size, bias=False)
+
+#         self.RNN = nn.GRUCell(input_size, input_size, False)
+
+#         # Vq included here.
+#         self.WuQ = nn.Linear(input_size, hidden_size, bias=True)
         
 
-    def forward(self, h, q, passage_mask, question_mask):
-        initial = self.initial_question_state(q, question_mask)
+#     def forward(self, h, q, passage_mask, question_mask):
+#         initial = self.initial_question_state(q, question_mask)
 
-        cell_input, start = self.passage_attn(h, passage_mask, initial)
+#         # cell_input, start = self.passage_attn(h, passage_mask, initial)
 
-        state = self.RNN(cell_input, hx=initial)
+#         # state = self.RNN(cell_input, hx=initial)
 
-        _, end = self.passage_attn(h, passage_mask, state)
+#         # _, end = self.passage_attn(h, passage_mask, state)
 
-        # passage_size, batch_size, _ = h.size()
-        # WhP = self.WhP(h)
-        # WhA = self.WhA(initial)
-        # passage_mask = passage_mask.view((passage_size, batch_size, 1))
+#         passage_size, batch_size, _ = h.size()
+#         WhP = self.WhP(h)
+#         WhA = self.WhA(initial)
+#         passage_mask = passage_mask.view((passage_size, batch_size, 1))
 
-        # sj = self.vT(torch.tanh(WhP + WhA))
-        # ai = masked_softmax(sj, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
-        # start = ai.squeeze(-1)
+#         sj = self.vT(torch.tanh(WhP + WhA))
+#         ai = masked_softmax(sj, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
+#         start = ai.squeeze(-1)
 
-        # p1 = F.softmax(sj, dim=0)
-        # ct = (p1 * h).sum(0)
-        # ht = self.RNN(ct, initial)
+#         p1 = F.softmax(sj, dim=0)
+#         ct = (p1 * h).sum(0)
+#         ht = self.RNN(ct, initial)
 
-        # sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
-        # ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
-        # end = ai_next.squeeze(-1)
+#         sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
+#         ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
+#         end = ai_next.squeeze(-1)
 
-        passage_size, batch_size, _ = h.size()
-        passage_mask = passage_mask.view((passage_size, batch_size, 1))
-        start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
-        end = masked_softmax(end, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
+#         return start, end
 
-        return start, end
+#     #     passage_size, batch_size, _ = h.size()
+#     #     passage_mask = passage_mask.view((passage_size, batch_size, 1))
+#     #     start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
+#     #     end = masked_softmax(end, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
 
-    def passage_attn(self, h, passage_mask, state):
-        passage_size, batch_size, _ = h.size()
-        passage_mask = passage_mask.view((passage_size, batch_size, 1))
-        state_expand = state.unsqueeze(0).expand(h.size(0), -1, -1)
-        logits = torch.cat([h, state_expand], dim=-1)
-        logits = self.WhA(logits)
-        logits = torch.tanh(logits)
-        logits = self.vT(logits)
-        score = masked_softmax(logits, passage_mask, dim=0, log_softmax=True)
-        cell_input = torch.sum(score * h, dim=0)
-        return cell_input, logits
+#     #     return start, end
 
-    def initial_question_state(self, q, question_mask):
-        question_size, batch_size, _ = q.size()
-        question_mask = question_mask.view((question_size, batch_size, 1))
-        initial_hidden = torch.tanh(self.WuQ(q))
-        initial_hidden = self.vT(initial_hidden)
-        initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)
-        a = initial_hidden * q
-        return a.sum(0)
+#     # def passage_attn(self, h, passage_mask, state):
+#     #     passage_size, batch_size, _ = h.size()
+#     #     passage_mask = passage_mask.view((passage_size, batch_size, 1))
+#     #     state_expand = state.unsqueeze(0).expand(h.size(0), -1, -1)
+#     #     logits = torch.cat([h, state_expand], dim=-1)
+#     #     logits = self.WhA(logits)
+#     #     logits = torch.tanh(logits)
+#     #     logits = self.vT(logits)
+#     #     score = masked_softmax(logits, passage_mask, dim=0, log_softmax=True)
+#     #     cell_input = torch.sum(score * h, dim=0)
+#     #     return cell_input, logits
 
-        # initial_hidden = self.WuQ(q) # linear layer counts as VrQ (bias)
-        # initial_hidden = torch.tanh(initial_hidden)
-        # initial_hidden = self.vT(initial_hidden)
-        # initial_hidden = F.softmax(initial_hidden, dim=1)
-        # a = initial_hidden * q
-        # initial_hidden = torch.bmm(initial_hidden.transpose(1, 2), a)
-        # return initial_hidden
+#     def initial_question_state(self, q, question_mask):
+#     #     question_size, batch_size, _ = q.size()
+#     #     question_mask = question_mask.view((question_size, batch_size, 1))
+#     #     initial_hidden = torch.tanh(self.WuQ(q))
+#     #     initial_hidden = self.vT(initial_hidden)
+#     #     initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)
+#     #     a = initial_hidden * q
+#     #     return a.sum(0)
+
+#         initial_hidden = self.WuQ(q) # linear layer counts as VrQ (bias)
+#         initial_hidden = torch.tanh(initial_hidden)
+#         initial_hidden = self.vT(initial_hidden)
+#         initial_hidden = F.softmax(initial_hidden, dim=1)
+#         a = initial_hidden * q
+#         initial_hidden = torch.bmm(initial_hidden.transpose(1, 2), a)
+#         return initial_hidden
         

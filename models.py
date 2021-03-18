@@ -144,6 +144,7 @@ class RNet(nn.Module):
 
         self.att = layers.SelfMatchingAttention(input_size=hidden_size,
                                                 hidden_size=hidden_size,
+                                                device=device,
                                                 num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
 
@@ -177,16 +178,17 @@ class RNet(nn.Module):
         # c_emb = self.enc(cc, c_len).transpose(0, 1)     # (batch_size, c_len, 2 * hidden_size)
         # q_emb = self.enc(qq, q_len).transpose(0, 1)     # (batch_size, q_len, 2 * hidden_size)
 
-
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
         h_p = self.att(v_p, c_mask)
 
-        h_p = h_p.transpose(0, 1)
+        start, end = self.out(h_p, q_emb, c_mask, q_mask)
 
-        mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # h_p = h_p.transpose(0, 1)
 
-        start, end = self.bidafout(h_p, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        # mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        # start, end = self.bidafout(h_p, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         torch.cuda.empty_cache()
 
