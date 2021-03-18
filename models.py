@@ -71,9 +71,9 @@ class BiDAF(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_enc = self.wordcharembed(cw_idxs, cc_idxs)         # (batch_size, c_len, 2 * hidden_size)
+        c_enc = self.wordcharembed(cw_idxs, cc_idxs, c_mask)         # (batch_size, c_len, 2 * hidden_size)
 
-        q_enc = self.wordcharembed(qw_idxs, qc_idxs)         # (batch_size, q_len, 2 * hidden_size)
+        q_enc = self.wordcharembed(qw_idxs, qc_idxs, q_mask)         # (batch_size, q_len, 2 * hidden_size)
 
 
         # c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
