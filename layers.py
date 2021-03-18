@@ -313,13 +313,17 @@ class WordCharEmbedding(nn.Module):
             nn.ReLU(),
             nn.MaxPool1d(cnn_size)
         )
+        self.rnn = RNNEncoder(input_size=cnn_size + word_vectors.size(1),
+                              hidden_size=hidden_size,
+                              num_layers=1,
+                              drop_prob=0.)
         self.GRU = nn.GRU(input_size=cnn_size + word_vectors.size(1),
                           hidden_size=hidden_size,
                           bidirectional=True,
                           num_layers=1,
                           dropout=0.)
 
-    def forward(self, w, c):
+    def forward(self, w, c, mask):
         self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
@@ -327,9 +331,11 @@ class WordCharEmbedding(nn.Module):
         char_emb = self.CNN(char_emb)
         char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1)) # (batch_size, seq_length, hidden_size)
         emb = torch.cat((word_emb, char_emb), dim=2)
-        emb = emb.permute((1, 0, 2))
-        result, _ = self.GRU(emb)
-        result = result.transpose(1, 0) # for bidaf
+        # emb = emb.permute((1, 0, 2))
+        # result, _ = self.GRU(emb)
+        result = self.rnn(emb, mask.sum(-1))
+        result = result.permute([1, 0, 2])
+        #result = result.transpose(1, 0) # for bidaf
         return result
 
 class GatedElementBasedRNNLayer(nn.Module):
@@ -359,9 +365,9 @@ class GatedElementBasedRNNLayer(nn.Module):
             nn.Linear(2 * input_size, 2 * input_size, bias=False),
             nn.Sigmoid()
         )
-
-        self.match_LSTM = nn.GRU(input_size=input_size * 2,
+        self.match_LSTM = nn.LSTM(input_size=input_size * 2,
                                  hidden_size=hidden_size,
+                                 bidirectional=True,
                                  num_layers=3,
                                  dropout=drop_prob if num_layers > 1 else 0.)
 
@@ -395,6 +401,9 @@ class GatedElementBasedRNNLayer(nn.Module):
         ct = torch.mul(ct, self.gate(ct))
 
         result, _ = self.match_LSTM(ct)
+        # ct = ct.permute([1, 0, 2])
+        # result = self.rnn(ct, passage_mask.sum(-1))
+        # result = result.permute([1, 0, 2])
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
@@ -488,14 +497,13 @@ class SelfMatchingAttention(nn.Module):
             nn.Sigmoid()
         )
 
-        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
+        self.AttentionRNN = nn.LSTM(input_size=input_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
                                    num_layers=3,
                                    dropout=drop_prob)
 
     def forward(self, passage, passage_mask):
-        # # IMP 1
         self.AttentionRNN.flatten_parameters()
 
         passage_size, batch_size, _ = passage.size()
@@ -600,24 +608,28 @@ class RNetOutput(nn.Module):
             nn.Linear(input_size, hidden_size, bias=False),
             nn.Linear(hidden_size, 1)
         )
-
+        
         self.question_transform = nn.Sequential(
             nn.Linear(input_size, hidden_size, bias=True), # Vq included here.
             nn.Linear(hidden_size, 1)
         )
         
     def forward(self, h, q, passage_mask, question_mask):
+        orig_pm = passage_mask
         passage_size, batch_size, _ = h.size()
         question_size, _, _ = q.size()
         passage_mask = passage_mask.view((passage_size, batch_size, 1))
         question_mask = question_mask.view((question_size, batch_size, 1))
+
         initial = masked_softmax(q * self.question_transform(q), question_mask).sum(0)
         unsqueezed = initial.unsqueeze(0)
         ptr1 = self.attn_mech(h + self.WhA(unsqueezed))
         start = masked_softmax(ptr1, passage_mask, log_softmax=True)
         ct = masked_softmax(ptr1, passage_mask)
         ct = (ct * h).sum(0)
+
         hta = self.RNN(ct, initial)
+        
         ptr2 = self.attn_mech(h + self.WhA(hta))
         end = masked_softmax(ptr2, passage_mask, log_softmax=True)
         return start.transpose(0, 1).squeeze(-1), end.transpose(0, 1).squeeze(-1)
@@ -706,4 +718,6 @@ class RNetOutput(nn.Module):
 #         a = initial_hidden * q
 #         initial_hidden = torch.bmm(initial_hidden.transpose(1, 2), a)
 #         return initial_hidden
+        
+
         

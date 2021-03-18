@@ -143,7 +143,7 @@ class RNet(nn.Module):
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 
-        self.att = layers.SelfMatchingAttention(input_size=hidden_size,
+        self.att = layers.SelfMatchingAttention(input_size=2 * hidden_size,
                                                 hidden_size=hidden_size,
                                                 device=device,
                                                 num_layers=self.num_layers,
@@ -169,9 +169,9 @@ class RNet(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_emb = self.emb(cw_idxs, cc_idxs)        
+        c_emb = self.emb(cw_idxs, cc_idxs, c_mask)        
 
-        q_emb = self.emb(qw_idxs, qc_idxs)    
+        q_emb = self.emb(qw_idxs, qc_idxs, q_mask)    
 
         # cc = self.emb2(cw_idxs)        # (batch_size, c_len, hidden_size)
         # qq = self.emb2(qw_idxs)       # (batch_size, q_len, hidden_size)
