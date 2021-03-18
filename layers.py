@@ -302,7 +302,6 @@ class WordCharEmbedding(nn.Module):
     def __init__(self, word_vectors, char_vectors, num_layers, cnn_size, hidden_size, drop_prob):
         super(WordCharEmbedding, self).__init__()
 
-        self.num_layers = num_layers
         self.hidden_size = hidden_size
 
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
@@ -317,8 +316,8 @@ class WordCharEmbedding(nn.Module):
         self.GRU = nn.GRU(input_size=cnn_size + word_vectors.size(1),
                           hidden_size=hidden_size,
                           bidirectional=True,
-                          num_layers=num_layers,
-                          dropout=drop_prob if num_layers > 1 else 0.)
+                          num_layers=1,
+                          dropout=0.)
 
     def forward(self, w, c):
         self.GRU.flatten_parameters()
@@ -363,7 +362,7 @@ class GatedElementBasedRNNLayer(nn.Module):
 
         self.match_LSTM = nn.GRU(input_size=input_size * 2,
                                  hidden_size=hidden_size,
-                                 num_layers=num_layers,
+                                 num_layers=3,
                                  dropout=drop_prob if num_layers > 1 else 0.)
 
     def forward(self, passage_repr, question_repr, passage_mask, question_mask):
@@ -436,8 +435,8 @@ class GatedElementBasedRNNLayer_Loop(nn.Module):
 
         self.match_LSTM = nn.GRU(input_size=hidden_size * 2,
                                  hidden_size=hidden_size,
-                                 num_layers=num_layers,
-                                 dropout=drop_prob if num_layers > 1 else 0.)
+                                 num_layers=3,
+                                 dropout=drop_prob)
 
     def forward(self, passage_repr, question_repr, passage_mask, question_mask):
          # ATTEMPT 2:
@@ -479,7 +478,6 @@ class SelfMatchingAttention(nn.Module):
         self.device = device
         self.hidden_size = hidden_size
         self.drop_prob = drop_prob
-        self.num_layers = num_layers
 
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
@@ -493,8 +491,8 @@ class SelfMatchingAttention(nn.Module):
         self.AttentionRNN = nn.GRU(input_size=input_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
-                                   num_layers=num_layers,
-                                   dropout=drop_prob if num_layers > 1 else 0.)
+                                   num_layers=3,
+                                   dropout=drop_prob)
 
     def forward(self, passage, passage_mask):
         # # IMP 1
@@ -542,7 +540,6 @@ class SelfMatchingAttention_Loop(nn.Module):
         self.device = device
         self.hidden_size = hidden_size
         self.drop_prob = drop_prob
-        self.num_layers = num_layers
 
         self.vT = nn.Linear(hidden_size, 1, bias=False)
         self.WvP = nn.Linear(input_size, hidden_size, bias=False)
@@ -556,8 +553,8 @@ class SelfMatchingAttention_Loop(nn.Module):
         self.AttentionRNN = nn.GRU(input_size=hidden_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
-                                   num_layers=num_layers,
-                                   dropout=drop_prob if num_layers > 1 else 0.)
+                                   num_layers=3,
+                                   dropout=drop_prob)
 
     def forward(self, passage_repr, passage_mask):
         passage_size, batch_size, _ = passage_repr.size()

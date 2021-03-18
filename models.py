@@ -129,6 +129,7 @@ class RNet(nn.Module):
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob)
+                                     
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
