@@ -330,7 +330,7 @@ class WordCharEmbedding(nn.Module):
         emb = torch.cat((word_emb, char_emb), dim=2)
         emb = emb.permute((1, 0, 2))
         result, _ = self.GRU(emb)
-        # result = result.transpose(1, 0) # for bidaf
+        result = result.transpose(1, 0) # for bidaf
         return result
 
 
@@ -398,7 +398,7 @@ class GatedElementBasedRNNLayer(nn.Module):
         #     prev = vt.to(self.device)
 
         # return result
-
+        
         self.match_LSTM.flatten_parameters()
 
         # Calculate ct
@@ -455,74 +455,76 @@ class SelfMatchingAttention(nn.Module):
         self.WvPbar = nn.Linear(input_size, hidden_size, bias=False)
 
         self.gate = nn.Sequential(
-            nn.Linear(2 * input_size, 2 * input_size, bias=False),
+            nn.Linear(2 * hidden_size, 2 * hidden_size, bias=False),
             nn.Sigmoid()
         )
 
-        self.AttentionRNN = nn.GRU(input_size=input_size * 2,
+        self.AttentionRNN = nn.GRU(input_size=hidden_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
                                    num_layers=num_layers,
                                    dropout=drop_prob if num_layers > 1 else 0.)
 
-    def forward(self, passage, passage_mask):
+    def forward(self, passage_repr, passage_mask):
+        passage_size, batch_size, _ = passage_repr.size()
 
-        # passage_size, batch_size, _ = passage_repr.size()
+        prev = torch.zeros((2, batch_size, self.hidden_size)).to(self.device)
+        result = torch.zeros((passage_size, batch_size, 2 * self.hidden_size)).to(self.device)
+        passage_repeat = self.WvP(passage_repr)
+        passage = self.WvPbar(passage_repr)
 
-        # prev = torch.zeros((2, batch_size, self.hidden_size)).to(self.device)
-        # result = torch.zeros((passage_size, batch_size, 2 * self.hidden_size)).to(self.device)
-        # passage_repeat = self.WvP(passage_repr)
-        # passage = self.WvPbar(passage_repr)
+        for i in range(passage_size):
+            curr_passage = passage[i,:,:].to(self.device)
+            sj = curr_passage.unsqueeze(0) + passage_repeat
+            sj = torch.tanh(sj)
+            sj = self.vT(sj)
+            ai = F.softmax(sj, dim=0)
+            ct = (passage * ai).sum(0)
+            utct = torch.cat((curr_passage, ct), dim=-1)
+            utct = utct * self.gate(utct)
+            utct = utct.unsqueeze(0)
+            vt, prev = self.AttentionRNN(utct, prev)
+            result[i,:,:] = vt.squeeze(0)
+            prev = prev.to(self.device)
 
-        # for i in range(passage_size):
-        #     curr_passage = passage[i,:,:].to(self.device)
-        #     sj = curr_passage.unsqueeze(0) + passage_repeat
-        #     sj = torch.tanh(sj)
-        #     sj = self.vT(sj)
-        #     ai = F.softmax(sj, dim=0)
-        #     ct = (passage * ai).sum(0)
-        #     utct = torch.cat((curr_passage, ct), dim=-1)
-        #     utct = utct * self.gate(utct)
-        #     utct = utct.unsqueeze(0)
-        #     vt, prev = self.AttentionRNN(utct, prev)
-        #     result[i,:,:] = vt.squeeze(0)
-        #     prev = prev.to(self.device)
-        # return result
-
-        self.AttentionRNN.flatten_parameters()
-
-        passage_size, batch_size, _ = passage.size()
-
-        WvP = self.WvP(passage)
-        WvPbar = self.WvPbar(passage)
-
-        WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
-        passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
-        
-        sj = self.vT(torch.tanh(WvP + WvPbar))
-        ai = masked_softmax(sj, passage_mask, dim=0)
-        expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        ct = (expanded_p * ai).sum(0)
-
-        # Concatenate utp (passage_repr) and ct (attention-pooling vector)
-        ct = torch.cat((passage, ct), dim=2)
-
-        # Apply Gate.
-        ct = torch.mul(ct, self.gate(ct))
-
-        #ct = ct.permute((1, 0, 2))
-        result, _ = self.AttentionRNN(ct)
-        #result = result.permute((1, 0, 2))
-
-        # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
-        # result = result.transpose(1, 0) # for bidaf
-        return result # (num_words, batch_size, hidden_size)
+        result = result.transpose(1, 0) # for bidaf
+        return result
 
+        # # IMP 1
+        # self.AttentionRNN.flatten_parameters()
 
+        # passage_size, batch_size, _ = passage.size()
 
+        # WvP = self.WvP(passage)
+        # WvPbar = self.WvPbar(passage)
+
+        # WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
+        # passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
         
+        # sj = self.vT(torch.tanh(WvP + WvPbar))
+        # ai = masked_softmax(sj, passage_mask, dim=0)
+        # expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        # ct = (expanded_p * ai).sum(0)
+
+        # # Concatenate utp (passage_repr) and ct (attention-pooling vector)
+        # ct = torch.cat((passage, ct), dim=2)
+
+        # # Apply Gate.
+        # ct = torch.mul(ct, self.gate(ct))
+
+        # #ct = ct.permute((1, 0, 2))
+        # result, _ = self.AttentionRNN(ct)
+        # #result = result.permute((1, 0, 2))
+
+        # # Dropout
+        # result = F.dropout(result, self.drop_prob, self.training)
+        # # result = result.transpose(1, 0) # for bidaf
+        # return result # (num_words, batch_size, hidden_size)
+
+
+
         # IMP 2
         # self.AttentionRNN.flatten_parameters()
 
@@ -594,6 +596,7 @@ class RNetOutput(nn.Module):
         # sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
         # ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
         # end = ai_next.squeeze(-1)
+
         passage_size, batch_size, _ = h.size()
         passage_mask = passage_mask.view((passage_size, batch_size, 1))
         start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
@@ -629,3 +632,4 @@ class RNetOutput(nn.Module):
         # a = initial_hidden * q
         # initial_hidden = torch.bmm(initial_hidden.transpose(1, 2), a)
         # return initial_hidden
+        

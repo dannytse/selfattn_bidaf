@@ -30,8 +30,9 @@ class BiDAF(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, device, hidden_size, drop_prob=0.):
         super(BiDAF, self).__init__()
+        self.device = device
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)
@@ -51,14 +52,15 @@ class BiDAF(nn.Module):
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob)
 
-        self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
+        self.mod = layers.RNNEncoder(input_size=2 * hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=2,
                                      drop_prob=drop_prob)
 
         self.selfatt = layers.SelfMatchingAttention(input_size=8 * hidden_size,
-                                                hidden_size=4 * hidden_size,
+                                                hidden_size=hidden_size,
                                                 num_layers=1,
+                                                device=self.device,
                                                 drop_prob=drop_prob)
 
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
@@ -83,7 +85,7 @@ class BiDAF(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        h_p = self.selfatt(att)
+        h_p = self.selfatt(att, c_mask)
 
         h_p = h_p.permute([1, 0, 2])
 
@@ -142,7 +144,6 @@ class RNet(nn.Module):
 
         self.att = layers.SelfMatchingAttention(input_size=hidden_size,
                                                 hidden_size=hidden_size,
-                                                device=device,
                                                 num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
 

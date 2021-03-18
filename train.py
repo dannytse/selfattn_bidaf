@@ -48,16 +48,17 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = RNet(word_vectors=word_vectors,
-                 char_vectors=char_vectors,
-                 device=device,
-                 hidden_size=args.hidden_size,
-                 batch_size=args.batch_size,
-                 drop_prob=args.drop_prob)
-    # model = BiDAF(word_vectors=word_vectors,
-    #                 char_vectors=char_vectors,
-    #                   hidden_size=args.hidden_size,
-    #                   drop_prob=args.drop_prob)
+    # model = RNet(word_vectors=word_vectors,
+    #              char_vectors=char_vectors,
+    #              device=device,
+    #              hidden_size=args.hidden_size,
+    #              batch_size=args.batch_size,
+    #              drop_prob=args.drop_prob)
+    model = BiDAF(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                      device=device,
+                      hidden_size=args.hidden_size,
+                      drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -116,7 +117,7 @@ def main(args):
                 # Forward
                 # log_p1, log_p2 = model(cw_idxs, qw_idxs)
                 log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
-                #pdb.set_trace()
+                # pdb.set_trace()
                 y1, y2 = y1.to(device), y2.to(device)
                 #pdb.set_trace()
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
