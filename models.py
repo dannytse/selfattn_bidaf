@@ -38,7 +38,7 @@ class BiDAF_RNet(nn.Module):
 
         self.selfatt = layers.SelfMatchingAttention(input_size=8 * hidden_size,
                                                 hidden_size=4 * hidden_size,
-                                                num_layers=1,
+                                                num_layers=3,
                                                 drop_prob=drop_prob)
 
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
@@ -49,9 +49,9 @@ class BiDAF_RNet(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len = c_mask.sum(-1)
 
-        c_enc = self.wordcharembed(cw_idxs, cc_idxs, c_mask)         # (batch_size, c_len, 2 * hidden_size)
+        c_enc = self.emb(cw_idxs, cc_idxs, c_mask)         # (batch_size, c_len, 2 * hidden_size)
 
-        q_enc = self.wordcharembed(qw_idxs, qc_idxs, q_mask)         # (batch_size, q_len, 2 * hidden_size)
+        q_enc = self.emb(qw_idxs, qc_idxs, q_mask)         # (batch_size, q_len, 2 * hidden_size)
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
