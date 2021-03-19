@@ -13,6 +13,7 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{lipsum}
+\usepackage{amsmath}
 
 \newcommand{\note}[1]{\textcolor{blue}{{#1}}}
 
@@ -61,10 +62,90 @@ This section helps the reader understand the research context of your work, by p
 This section details your approach(es) to the problem. 
 For example, this is where you describe the architecture of your neural network(s), and any other key methods or algorithms.
 
+We wish to develop a model that performs relatively well on the Stanford Question Answering Dataset (SQuAD). To do this, we reimplement the complex neural model described in the paper \textit{R-Net: Machine Reading Comprehension with Self-Matching Networks} \cite{rnet}, including its contributions such as the gated attention-based recurrent network and self-matching mechanism. Furthermore, we wish to determine how different ways of processing character embeddings interact with the rest of the model architecture, and how the self-attention mechanisms described in the paper compare to the given baseline RNN model for question-answering. We suspect that, since the self-attention mechanism allows hidden states to consider previous hidden states, this model can record long-distance dependencies, and as a result have more complete answers to questions. The project is a direct reimplementation of the paper, even training on a similar dataset (SQuAD 2.0), so reimplementing the model, tuning hyper-parameters, and making few adjustments should suffice. Variants of self-attention have proven to be vastly successful in modern natural language processing models (ex. usage of multi-headed self-attention in a Transformer Encoder-Decoder block introduced in Vaswani et al. (2017)'s \textit{Attention Is All You Need} \cite{vaswani}), thus in theory, this model should outperform our Bidirectional Attention Flow baseline. 
+
+We describe the model architecture below. First, we process the question and passage through a bi-directional recurrent network. Then, we match each question and passage with gated attention-based recurrent networks, followed by self-matching attention. This provides us with a question-aware representation for the passage. Then, we refine the passage representation with self-matching attention and feed it into the output layer to return the boundary of the answer span. The model layers are:
+
+\begin{enumerate}
+\item \textbf{Question and Passage Encoder} Passing in a question $Q = \{w_t^Q\}_{t = 1}^m$ and a passage $P = \{w_t^P\}_{t = 1}^n$, we begin by converting the question and passage into their corresponding word embeddings $(\{e_t^Q\}_{t = 1}^m$ and $\{e_t^P\}_{t = 1}^n)$ respectively). We obtain the character-level embeddings by taking the final hidden states of a bi-directional recurrent neural network (RNN) applied to the embeddings of characters in the token. Then, we apply a Gated Recurrent Unit (GRU) to obtain representations for words in the question and the passage. That is,
+\begin{center}
+$u_t^Q = \text{GRU}_Q(u_{t - 1}^Q, [e_t^Q, c_t^Q])$
+
+$u_t^P = \text{GRU}_P(u_{t - 1}^P, [e_t^P, c_t^P])	$
+\end{center}
+
+\item \textbf{Gated Attention-Based Recurrent Networks} Now, given question and passage representations $u_t^Q$ and $u_t^P$ from the Question and Passage Encoder, we use a gated attention-based recurrent network to match question information with passage representation. Wang \& Jiang (2016) \cite{wang2016a} propose match-LSTM:
+\[
+v_t^P = \text{GRU}(v_{t - 1}^P, [u_t^P, c_t])
+\]
+where $c_t$ is given by the attention-pooling vector of the entire question $u^Q$:
+\begin{center}
+$s_j^t = v^T\text{tanh}(W_u^Qu_j^Q + W_u^Pu_t^P + W_v^Pv_{t - 1}^P)$
+
+$a_i^t = \text{exp}(s_i^t)/\sum_{j = 1}^m\text{exp}(s_j^t)$
+
+$c_t = \sum_{i = 1}^m a_i^tu_i^Q$
+\end{center}
+Then, we add another gate to the input to the input $[u_t^P, c_t]$:
+\begin{center}
+$g_t = \text{sigmoid}(W_g[u_t^P, c_t])$
+
+$[u_t^P, c_t]^* = g_t \odot [u_t^P, c_t]$,
+\end{center}
+which is establishes a relationship between the current passage word and its attention-pooling vector of the question. $[u_t^P, c_t]^*$ is utilized in subsequent calculations in place of $[u_t^P, c_t]$, and is called the "gated attention-based recurrent network".
+
+\item \textbf{Self-Matching Attention} Now, we are given the question-aware passage representation from previous layers, or $\{v_t^P\}_{t = 1}^n$. An issue with such a representation is that it lacks extensive knowledge of context. To circumvent this issue, the paper proposes using attention to match $\{v_t^P\}_{t = 1}^n$ against itself, obtaining $h_t^P$ which encodes evidence from words in the passage and their matching question information:
+\begin{center}
+$h_t^P = \text{GRU}(h_{t - 1}^P, [v_t^P, c_t])$
+\end{center}
+where $c_t$ is given by the attention-pooling vector of the whole passage $v^P$:
+\begin{center}
+$s_j^t = v^T\text{tanh}(W_v^Pu_j^P + W_u^{\bar{P}}u_t^P)$
+
+$a_i^t = \text{exp}(s_i^t)/\sum_{j = 1}^n\text{exp}(s_j^t)$
+
+$c_t = \sum_{i = 1}^n a_i^tv_i^P$
+\end{center}
+Once again, an additional gate as stated above is applied to $[v_t^P, c_t]$. 
+
+\item \textbf{Output Layer} Finally, pointer networks are used to predict the start and end position of the answer. Attention-pooling over the question representation is used to generate the initial hidden vector for the pointer network. Given $\{h_t^P\}_{t = 1}^n$ from the previous layers, we utilize the attention mechanism to select start and end positions $p^1$ and $p^2$ from the passage:
+\begin{center}
+$s_j^t = v^T\text{tanh}(W_h^Ph_j^P + W_h^{a}h_{t - 1}^a)$
+
+$a_i^t = \text{exp}(s_i^t)/\sum_{j = 1}^n\text{exp}(s_j^t)$
+
+$p_t = \text{argmax}(a_1^t, \dots, a_n^t)$
+\end{center}
+where
+\begin{center}
+$c_t = \sum_{i = 1}^n a_i^th_i^P$
+
+$h_t^a = \text{GRU}(h_{t - 1}^a, c_t)$
+\end{center}
+Then, using $h^{t - 1}_a$ as the initial hidden state and $r^Q$ as the initial state,
+\begin{center}
+$s_j = v^T\text{tanh}(W_u^Qu_j^Q + W_v^QV_r^Q)$
+
+$a_i = \text{exp}(s_i)/\sum_{j = 1}^n\text{exp}(s_j)$
+
+$r^Q = \sum_{i = 1}^m a_iu_i^Q$
+\end{center}
+
+
+
+\end{enumerate}
+
+Though the paper describes exactly what layers to use, and what model architecture components to incorporate, we may experiment with other adjustments that have proven to work. One example of such an adjustment is described in Seo et al. (2017)'s \textit{Bi-Directional Attention Flow for Machine Comprehension} \cite{seo}, where a Convolutional Neural Network (CNN) Layer is utilized to process character embeddings. In this modification, we simply obtain the character-level embedding of each word using a CNN, instead of a GRU. Characters are embedded into vectors whose size is the input-channel size of the CNN, which are then fed as 1-dimensional inputs. Then, we apply a max-pool on the CNN's outputs over the entire width to obtain a fixed-size vector for each word.
+
+The baseline we use is a Bi-Directional Attention Flow (BiDAF) model on the word embeddings. This model is described in the Default Final Project Handout (SQuAD Track), and consists of a Word Embedding Layer, an Encoder Layer, an Attention Layer, a Modeling Layer, and an Output Layer.
+
 \section{Experiments}
 This section contains the following.
 
 \subsection{Data}
+
+As data, we use the Stanford Question Answering Dataset 2.0 (SQuAD 2.0), which has the splits train (129,941 examples), dev (6078 examples), and split (5915 examples). In this dataset, passages are selected from the English Wikipedia (usually 100-150 words), questions are crowd-sourced, and each answer is either contained within the passage, or does not exist at all (not answerable). Also, each answerable SQuAD question has three answers, each from a different crowd worker. 
+
 Describe the dataset(s) you are using (provide references). If it's not already clear, make sure the associated task is clearly described.
 Being precise about the exact form of the input and output can be very useful for readers attempting to understand your work, especially if you've defined your own task.
 
@@ -92,11 +173,11 @@ Summarize the main findings of your project, and what you have learnt. Highlight
 
 \bibliographystyle{unsrt}
 \bibliography{references}
-
-\appendix
-
-\section{Appendix (optional)}
-If you wish, you can include an appendix, which should be part of the main PDF, and does not count towards the 6-8 page limit.
-Appendices can be useful to supply extra details, examples, figures, results, visualizations, etc., that you couldn't fit into the main paper. However, your grader \textit{does not} have to read your appendix, and you should assume that you will be graded based on the content of the main part of your paper only.
+%
+%\appendix
+%
+%\section{Appendix (optional)}
+%If you wish, you can include an appendix, which should be part of the main PDF, and does not count towards the 6-8 page limit.
+%Appendices can be useful to supply extra details, examples, figures, results, visualizations, etc., that you couldn't fit into the main paper. However, your grader \textit{does not} have to read your appendix, and you should assume that you will be graded based on the content of the main part of your paper only.
 
 \end{document}

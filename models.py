@@ -9,6 +9,62 @@ import torch
 import torch.nn as nn
 import pdb
 
+class BiDAF_RNet(nn.Module):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+        super(BiDAF_RNet, self).__init__()
+        self.emb = layers.Embedding(word_vectors=word_vectors,
+                                    hidden_size=hidden_size,
+                                    drop_prob=drop_prob)
+
+        self.enc = layers.RNNEncoder(input_size=hidden_size,
+                                     hidden_size=hidden_size,
+                                     num_layers=1,
+                                     drop_prob=drop_prob)
+
+        self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
+                                            char_vectors=char_vectors,
+                                            cnn_size=16,
+                                            hidden_size=hidden_size,
+                                            num_layers=1,
+                                            drop_prob=drop_prob)
+
+        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+                                         drop_prob=drop_prob)
+
+        self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
+                                     hidden_size=hidden_size,
+                                     num_layers=2,
+                                     drop_prob=drop_prob)
+
+        self.selfatt = layers.SelfMatchingAttention(input_size=8 * hidden_size,
+                                                hidden_size=4 * hidden_size,
+                                                num_layers=1,
+                                                drop_prob=drop_prob)
+
+        self.out = layers.BiDAFOutput(hidden_size=hidden_size,
+                                      drop_prob=drop_prob)
+
+    def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
+        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
+        c_len = c_mask.sum(-1)
+
+        c_enc = self.wordcharembed(cw_idxs, cc_idxs, c_mask)         # (batch_size, c_len, 2 * hidden_size)
+
+        q_enc = self.wordcharembed(qw_idxs, qc_idxs, q_mask)         # (batch_size, q_len, 2 * hidden_size)
+
+        att = self.att(c_enc, q_enc,
+                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+
+        h_p = self.selfatt(att)
+
+        mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+
+        torch.cuda.empty_cache()
+
+        return out
 
 class BiDAF(nn.Module):
     """Baseline BiDAF model for SQuAD.
@@ -119,17 +175,7 @@ class RNet(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, batch_size, device, hidden_size, drop_prob=0.):
         super(RNet, self).__init__()
-        self.num_layers = 1
-
-        self.emb2 = layers.Embedding(word_vectors=word_vectors,
-                                    hidden_size=hidden_size,
-                                    drop_prob=drop_prob)
-
-        self.enc = layers.RNNEncoder(input_size=hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=1,
-                                     drop_prob=drop_prob)
-                                     
+        self.num_layers = 1 
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             cnn_size=16,
@@ -143,12 +189,8 @@ class RNet(nn.Module):
                                                           num_layers=self.num_layers,
                                                           drop_prob=drop_prob)
 
-        self.bidafatt = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
-
         self.att = layers.SelfMatchingAttention(input_size=8 * hidden_size,
                                                 hidden_size=hidden_size,
-                                                device=device,
                                                 num_layers=self.num_layers,
                                                 drop_prob=drop_prob)
 
@@ -156,15 +198,6 @@ class RNet(nn.Module):
                                      hidden_size=hidden_size,
                                      num_layers=self.num_layers,
                                      drop_prob=drop_prob)
-
-        self.mod = layers.RNNEncoder(input_size=2 * hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=2,
-                                     drop_prob=drop_prob)
-
-        self.bidafout = layers.BiDAFOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
-
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
 
@@ -176,23 +209,11 @@ class RNet(nn.Module):
 
         q_emb = self.emb(qw_idxs, qc_idxs, q_mask)    
 
-        # cc = self.emb2(cw_idxs)        # (batch_size, c_len, hidden_size)
-        # qq = self.emb2(qw_idxs)       # (batch_size, q_len, hidden_size)
-
-        # c_emb = self.enc(cc, c_len).transpose(0, 1)     # (batch_size, c_len, 2 * hidden_size)
-        # q_emb = self.enc(qq, q_len).transpose(0, 1)     # (batch_size, q_len, 2 * hidden_size)
-
         v_p = self.gated_rnn(c_emb, q_emb, c_mask, q_mask)
 
-        h_p = self.att(v_p, c_mask)
+        h_p = self.att(v_p)
 
         start, end = self.out(h_p, q_emb.transpose(1, 0), c_mask, q_mask)
-
-        # h_p = h_p.transpose(0, 1)
-
-        # mod = self.mod(h_p, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-        # start, end = self.bidafout(h_p, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         torch.cuda.empty_cache()
 

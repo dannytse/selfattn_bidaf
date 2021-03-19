@@ -224,67 +224,6 @@ class BiDAFOutput(nn.Module):
 
 # -----------------------------------------------------------------------------------------------------------------------
 
-# class CNNwithMaxPooling(nn.Module):
-#     """CNN Layer with max pooling for character embeddings.
-
-#     Args:
-#         char_vectors (torch.Tensor): character vectors to apply 1D convolutional layer to.
-#     """
-#     def __init__(self, in_channels, out_channels, kernel_size):
-#         super(CNNwithMaxPooling, self).__init__()
-#         self.conv1d = nn.Conv1d(in_channels=in_channels,
-#                                 out_channels=out_channels,
-#                                 kernel_size=kernel_size)
-#         self.maxpool = nn.MaxPool1d(16)
-    
-#     def forward(self, x):
-#         conv = self.conv1d(x)
-#         conv = F.relu(conv)
-#         conv = self.maxpool(conv)
-#         conv = conv.squeeze(dim=1)
-#         return conv
-
-
-# class WordCharEmbeddingwithCNN(nn.Module):
-#     """Embedding layer with both word and character-level component.
-#        Uses Gated Recurrent Unit (GRU) to generate character-level embeddings.
-
-#     Args:
-#         word_vectors (torch.Tensor): Pre-trained word vectors.
-#         char_vectors (torch.Tensor): Pre-trained character vectors.
-#         hidden_size (int): Size of hidden activations.
-#         drop_prob (float): Probability of zero-ing out activations
-#     """
-#     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
-#         super(WordCharEmbeddingwithCNN, self).__init__()
-#         self.drop_prob = drop_prob
-#         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-#         self.char_embed = nn.Embedding.from_pretrained(char_vectors)
-#         linear_input = word_vectors.size(1) + 16
-#         self.cnn = CNNwithMaxPooling(char_vectors.size(1), 16, kernel_size=5)
-#         self.maxpool = nn.MaxPool1d(16)
-
-#         # Highway code
-#         self.proj = nn.Linear(linear_input, hidden_size, bias=False)
-#         self.hwy = HighwayEncoder(2, hidden_size)
-
-#     def forward(self, w, c):
-#         word_emb = self.word_embed(w)
-#         char_emb = self.char_embed(c)
-#         char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
-#         char_emb = self.cnn(char_emb)
-#         char_emb = self.maxpool(F.relu(char_emb))
-#         char_emb = char_emb.squeeze(dim=1)
-#         char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1))
-#         emb = torch.cat((word_emb, char_emb), dim=-1)
-
-#         emb = F.dropout(emb, self.drop_prob, self.training)
-#         # Highway code
-#         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-#         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-#         return emb
-
-
 class WordCharEmbedding(nn.Module):
     """Embedding layer with both word and character-level component.
        Uses Gated Recurrent Unit (GRU) to generate character-level embeddings.
@@ -313,30 +252,25 @@ class WordCharEmbedding(nn.Module):
             nn.ReLU(),
             nn.MaxPool1d(cnn_size)
         )
-        self.rnn = RNNEncoder(input_size=cnn_size + word_vectors.size(1),
+        self.proj = nn.Linear(word_vectors.size(1) + cnn_size, hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+        self.rnn = RNNEncoder(input_size=hidden_size,
                               hidden_size=hidden_size,
                               num_layers=1,
-                              drop_prob=0.)
-        self.GRU = nn.GRU(input_size=cnn_size + word_vectors.size(1),
-                          hidden_size=hidden_size,
-                          bidirectional=True,
-                          num_layers=1,
-                          dropout=0.)
+                              drop_prob=drop_prob)
 
     def forward(self, w, c, mask):
-        self.GRU.flatten_parameters()
         word_emb = self.word_embed(w)
         char_emb = self.char_embed(c)
         char_emb = char_emb.view(char_emb.shape[0] * char_emb.shape[1], char_emb.shape[3], char_emb.shape[2])
         char_emb = self.CNN(char_emb)
         char_emb = char_emb.view(word_emb.size(0), word_emb.size(1), char_emb.size(1)) # (batch_size, seq_length, hidden_size)
         emb = torch.cat((word_emb, char_emb), dim=2)
-        # emb = emb.permute((1, 0, 2))
-        # result, _ = self.GRU(emb)
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         result = self.rnn(emb, mask.sum(-1))
-        # result = result.permute([1, 0, 2])
-        #result = result.transpose(1, 0) # for bidaf
         return result
+
 
 class GatedElementBasedRNNLayer(nn.Module):
     """Gated Element-Based RNN Layer.
@@ -377,7 +311,6 @@ class GatedElementBasedRNNLayer(nn.Module):
         # Calculate ct
         question = self.WuQ(question_repr)
         passage = self.WuP(passage_repr)
-        #last_hidden_state = self.WvP(prev)
 
         question_size, batch_size, _ = question_repr.size()
         passage_size = passage_repr.size(0)
@@ -385,9 +318,6 @@ class GatedElementBasedRNNLayer(nn.Module):
         question = question.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
         passage = passage.repeat(question_size, 1, 1, 1)
         question_mask = question_mask.view(question_size, 1, batch_size, 1)
-
-        # question = question.unsqueeze(1).repeat(1, passage_size, 1, 1)
-        # passage = passage.unsqueeze(2).repeat(1, 1, question_size, 1)
 
         sj = self.vT(torch.tanh(question + passage))
         ai = masked_softmax(sj, question_mask, dim=0)
@@ -401,9 +331,6 @@ class GatedElementBasedRNNLayer(nn.Module):
         ct = torch.mul(ct, self.gate(ct))
 
         result, _ = self.match_LSTM(ct)
-        # ct = ct.permute([1, 0, 2])
-        # result = self.rnn(ct, passage_mask.sum(-1))
-        # result = result.permute([1, 0, 2])
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
@@ -411,11 +338,7 @@ class GatedElementBasedRNNLayer(nn.Module):
 
 
 class GatedElementBasedRNNLayer_Loop(nn.Module):
-    """Gated Element-Based RNN Layer.
-
-    Args:
-        passage_repr: passage representation
-        question_repr: question representation
+    """Gated Element-Based RNN Layer: Iterative approach.
 
     Returns:
         vtp (torch.Tensor): setence-pair representation generated via soft-alignment of words
@@ -448,10 +371,7 @@ class GatedElementBasedRNNLayer_Loop(nn.Module):
                                  dropout=drop_prob)
 
     def forward(self, passage_repr, question_repr, passage_mask, question_mask):
-         # ATTEMPT 2:
-        # Calculate ct
-
-        question_size, batch_size, _ = question_repr.size()
+        _, batch_size, _ = question_repr.size()
         passage_size = passage_repr.size(0)
 
         prev = torch.zeros((batch_size, self.hidden_size)).to(self.device)
@@ -481,10 +401,8 @@ class SelfMatchingAttention(nn.Module):
 
     Args:
     """
-    def __init__(self, input_size, hidden_size, device, num_layers, drop_prob):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob):
         super(SelfMatchingAttention, self).__init__()
-
-        self.device = device
         self.hidden_size = hidden_size
         self.drop_prob = drop_prob
 
@@ -500,25 +418,24 @@ class SelfMatchingAttention(nn.Module):
         self.AttentionRNN = nn.GRU(input_size=input_size * 2,
                                    hidden_size=hidden_size,
                                    bidirectional=True,
-                                   num_layers=3,
+                                   num_layers=num_layers,
                                    dropout=drop_prob)
 
-    def forward(self, passage, passage_mask):
+    def forward(self, passage):
         self.AttentionRNN.flatten_parameters()
 
-        passage_size, batch_size, _ = passage.size()
+        passage_size = passage.size(0)
 
         WvP = self.WvP(passage)
         WvPbar = self.WvPbar(passage)
 
-        WvP = WvP.unsqueeze(0)
-        WvPbar = WvPbar.unsqueeze(1)
-        passage_mask = passage_mask.view(passage_size, 1, batch_size, 1)
-        
+        WvP = WvP.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        WvPbar = WvPbar.repeat(passage_size, 1, 1, 1)
+
         sj = self.vT(torch.tanh(WvP + WvPbar))
-        ai = masked_softmax(sj, passage_mask, dim=0).sum(0)
-        #expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
-        ct = (expanded_p * ai)
+        ai = F.softmax(sj, dim=0)
+        expanded_p = passage.repeat(passage_size, 1, 1, 1).permute([1, 0, 2, 3])
+        ct = (expanded_p * ai).sum(0)
 
         # Concatenate utp (passage_repr) and ct (attention-pooling vector)
         ct = torch.cat((passage, ct), dim=2)
@@ -526,14 +443,11 @@ class SelfMatchingAttention(nn.Module):
         # Apply Gate.
         ct = torch.mul(ct, self.gate(ct))
 
-        #ct = ct.permute((1, 0, 2))
         result, _ = self.AttentionRNN(ct)
-        #result = result.permute((1, 0, 2))
 
         # Dropout
         result = F.dropout(result, self.drop_prob, self.training)
-        # result = result.transpose(1, 0) # for bidaf
-        return result # (num_words, batch_size, hidden_size)
+        return result # (batch_size, num_words, hidden_size)
 
 
 
@@ -632,91 +546,3 @@ class RNetOutput(nn.Module):
         end = masked_softmax(ptr2, passage_mask, log_softmax=True)
 
         return start.transpose(0, 1).squeeze(-1), end.transpose(0, 1).squeeze(-1)
-
-
-
-# class RNetOutput(nn.Module):
-#     """Output layer used by R-Net for question answering. Uses pointer networks.
-
-#     Args:
-#         x (torch.Tensor): passage representation
-#     """
-#     def __init__(self, input_size, hidden_size, num_layers, drop_prob):
-#         super(RNetOutput, self).__init__()
-
-#         self.vT = nn.Linear(hidden_size, 1, bias=False)
-#         self.WhP = nn.Linear(input_size, hidden_size, bias=False)
-#         self.WhA = nn.Linear(2 * input_size, hidden_size, bias=False)
-
-#         self.RNN = nn.GRUCell(input_size, input_size, False)
-
-#         # Vq included here.
-#         self.WuQ = nn.Linear(input_size, hidden_size, bias=True)
-        
-
-#     def forward(self, h, q, passage_mask, question_mask):
-#         initial = self.initial_question_state(q, question_mask)
-
-#         # cell_input, start = self.passage_attn(h, passage_mask, initial)
-
-#         # state = self.RNN(cell_input, hx=initial)
-
-#         # _, end = self.passage_attn(h, passage_mask, state)
-
-#         passage_size, batch_size, _ = h.size()
-#         WhP = self.WhP(h)
-#         WhA = self.WhA(initial)
-#         passage_mask = passage_mask.view((passage_size, batch_size, 1))
-
-#         sj = self.vT(torch.tanh(WhP + WhA))
-#         ai = masked_softmax(sj, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
-#         start = ai.squeeze(-1)
-
-#         p1 = F.softmax(sj, dim=0)
-#         ct = (p1 * h).sum(0)
-#         ht = self.RNN(ct, initial)
-
-#         sj_next = self.vT(torch.tanh(WhP + self.WhA(ht)))
-#         ai_next = masked_softmax(sj_next, passage_mask, dim=0, log_softmax=True).permute([1, 0, 2])
-#         end = ai_next.squeeze(-1)
-
-#         return start, end
-
-#     #     passage_size, batch_size, _ = h.size()
-#     #     passage_mask = passage_mask.view((passage_size, batch_size, 1))
-#     #     start = masked_softmax(start, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
-#     #     end = masked_softmax(end, passage_mask, dim=0, log_softmax=True).transpose(0, 1).squeeze(-1)
-
-#     #     return start, end
-
-#     # def passage_attn(self, h, passage_mask, state):
-#     #     passage_size, batch_size, _ = h.size()
-#     #     passage_mask = passage_mask.view((passage_size, batch_size, 1))
-#     #     state_expand = state.unsqueeze(0).expand(h.size(0), -1, -1)
-#     #     logits = torch.cat([h, state_expand], dim=-1)
-#     #     logits = self.WhA(logits)
-#     #     logits = torch.tanh(logits)
-#     #     logits = self.vT(logits)
-#     #     score = masked_softmax(logits, passage_mask, dim=0, log_softmax=True)
-#     #     cell_input = torch.sum(score * h, dim=0)
-#     #     return cell_input, logits
-
-#     def initial_question_state(self, q, question_mask):
-#     #     question_size, batch_size, _ = q.size()
-#     #     question_mask = question_mask.view((question_size, batch_size, 1))
-#     #     initial_hidden = torch.tanh(self.WuQ(q))
-#     #     initial_hidden = self.vT(initial_hidden)
-#     #     initial_hidden = masked_softmax(initial_hidden, question_mask, dim=0)
-#     #     a = initial_hidden * q
-#     #     return a.sum(0)
-
-#         initial_hidden = self.WuQ(q) # linear layer counts as VrQ (bias)
-#         initial_hidden = torch.tanh(initial_hidden)
-#         initial_hidden = self.vT(initial_hidden)
-#         initial_hidden = F.softmax(initial_hidden, dim=1)
-#         a = initial_hidden * q
-#         initial_hidden = torch.bmm(initial_hidden.transpose(1, 2), a)
-#         return initial_hidden
-        
-
-        
