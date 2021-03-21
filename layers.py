@@ -43,7 +43,6 @@ class HighwayEncoder(nn.Module):
 
 class WordCharEmbedding(nn.Module):
     """Embedding layer with both word and character-level component.
-       Uses Gated Recurrent Unit (GRU) to generate character-level embeddings.
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
