@@ -1,4 +1,9 @@
-## Setup
+This repository is part of the [CS 224N](http://web.stanford.edu/class/cs224n/project/default-final-project-handout-squad-track.pdf) Winter 2021 Default final project. Our model is a modification of the BiDAF model (described in [Seo et al.](https://arxiv.org/abs/1611.01603). We add an additional gated self-attention layer, as described in the Microsoft Research Asia's paper [R-NET: Machine Reading Comprehension with Self-matching Networks](https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf). An illustration of the model architecture is as follows:
+
+![](./RNetBidaf.png)
+
+
+To run the code, follow the instructions below: (copied from CS 224N starter code README)
 
 1. Make sure you have [Miniconda](https://conda.io/docs/user-guide/install/index.html#regular-installation) installed
     1. Conda is a package manager that sandboxes your project’s dependencies in a virtual environment

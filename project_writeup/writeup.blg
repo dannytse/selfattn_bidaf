@@ -1,0 +1,62 @@
+This is BibTeX, Version 0.99d (TeX Live 2019)
+Capacity: max_strings=100000, hash_size=100000, hash_prime=85009
+The top-level auxiliary file: writeup.aux
+The style file: unsrt.bst
+Database file #1: references.bib
+Too many commas in name 1 of "Minjoon Seo, Aniruddha Kembhavi, Ali Farhadi, Hananneh Hajishirzi" for entry seo
+while executing---line 944 of file unsrt.bst
+Warning--empty booktitle in rnet
+Warning--empty booktitle in kim
+Name 1 in "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin" has a comma at the end for entry vaswani
+while executing---line 944 of file unsrt.bst
+Too many commas in name 1 of "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin" for entry vaswani
+while executing---line 944 of file unsrt.bst
+Too many commas in name 1 of "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin" for entry vaswani
+while executing---line 944 of file unsrt.bst
+Too many commas in name 1 of "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin" for entry vaswani
+while executing---line 944 of file unsrt.bst
+Too many commas in name 1 of "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin" for entry vaswani
+while executing---line 944 of file unsrt.bst
+Warning--empty booktitle in srivi
+You've used 5 entries,
+            1791 wiz_defined-function locations,
+            466 strings with 4166 characters,
+and the built_in function-call counts, 819 in all, are:
+= -- 53
+> -- 24
+< -- 0
++ -- 11
+- -- 6
+* -- 21
+:= -- 129
+add.period$ -- 15
+call.type$ -- 5
+change.case$ -- 5
+chr.to.int$ -- 0
+cite$ -- 8
+duplicate$ -- 57
+empty$ -- 120
+format.name$ -- 6
+if$ -- 191
+int.to.chr$ -- 0
+int.to.str$ -- 5
+missing$ -- 5
+newline$ -- 28
+num.names$ -- 5
+pop$ -- 38
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 16
+stack$ -- 0
+substring$ -- 0
+swap$ -- 7
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 3
+while$ -- 5
+width$ -- 6
+write$ -- 49
+(There were 6 error messages)
