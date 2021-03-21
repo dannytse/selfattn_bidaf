@@ -2,6 +2,10 @@ This repository is part of the [CS 224N](http://web.stanford.edu/class/cs224n/pr
 
 ![](./RNetBidaf.png)
 
+With this model, we obtain competitive results on the CS 224N IID-SQuAD Leaderboard:
+On dev set, EM: 62.342, F1: 65.540, compared to the baseline BiDAF model's EM: 57.889, and F1: 60.965.
+On test set, rank 34 in total. 
+
 
 To run the code, follow the instructions below: (copied from CS 224N starter code README)
 
